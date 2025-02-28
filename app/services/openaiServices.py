@@ -125,7 +125,8 @@ def generateResponse(userMessage, chatId=None):
 
         # Format messages for OpenAI
         messages = [{"role": "system",
-                     "content": "You are a great assistant that responds to voice commands for everything you hear."},]
+                     "content": "You are a great knitwear production assistant that responds"
+                                  "to voice commands and can analyse production stats when have access."},]
         for msg in chatMessages:
             messages.append({"role": msg.role, "content": msg.content})
 
@@ -135,13 +136,13 @@ def generateResponse(userMessage, chatId=None):
 
         # Generate a response using OpenAI's GPT-3 API'
         response = openai.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a great assistant that responds to voice commands"
-                                              " for everything you hear."},
+                {"role": "system", "content": "You are a great knitwear production assistant that responds"
+                                              "to voice commands and can analyse production stats when have access."},
                 {"role": "user", "content": userMessage}
             ],
-            max_tokens=2000,
+            max_tokens=500,
             temperature=0.7,
         )
 

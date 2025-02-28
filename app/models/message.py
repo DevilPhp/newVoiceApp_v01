@@ -19,5 +19,5 @@ class Message(db.Model):
             'id': self.id,
             'role': self.role,
             'content': self.content,
-            'created_at': self.created_at.isoformat('dd.mm.yyyy')
+            'createdАt': self.createdAt.isoformat()
         }

@@ -23,9 +23,7 @@ class Chat(db.Model):
             'id': self.id,
             'chatUuid': self.chatUuid,
             'title': self.title,
-            'createdAt': self.createdAt.isoformat('dd.mm.yyyy'),
-            'updatedAt': self.updatedAt.isoformat('dd.mm.yyyy'),
+            'createdAt': self.createdAt.isoformat(),
+            'updatedAt': self.updatedAt.isoformat(),
             'messages': [message.to_dict() for message in self.messages],
         }
-
-    # Other methods and properties can be added here

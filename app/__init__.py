@@ -17,6 +17,11 @@ def createApp(configClass=None):
     db.init_app(app)
     migrate.init_app(app, db)
 
+    from app.models import chat, message
+
+    with app.app_context():
+        db.create_all()
+
     from app.blueprints import bp as mainBp
     app.register_blueprint(mainBp)
 

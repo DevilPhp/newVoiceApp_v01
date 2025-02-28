@@ -143,7 +143,7 @@ def get_chats():
             {
                 "id": chat.id,
                 "title": chat.title,
-                "updatedAt": chat.updatedAt.isoformat('dd.mm.yyyy')
+                "updatedAt": chat.updatedAt.isoformat()
             }
             for chat in chats
         ]

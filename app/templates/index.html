@@ -19,40 +19,61 @@
         <p>Speak to control your social media and more</p>
     </header>
 
-    <div class="voice-control-container">
+    <div class="main-content">
+        <div class="voice-control-container">
+            <button id="recordButton" class="record-button">
+                <i class="fas fa-microphone"></i>
+            </button>
 
-        <button id="recordButton" class="record-button">
-            <i class="fas fa-microphone"></i>
-        </button>
-
-        <div class="status">
-            <div id="recordingStatus" class="recording-status">
-                Click the microphone to start recording
-            </div>
-            <div id="timer" class="timer">00:00</div>
-        </div>
-
-        <div class="transcript-container">
-            <h3>Transcript:</h3>
-            <div id="transcript" class="transcript-text">
-                Your spoken words will appear here...
+            <div class="status">
+                <div id="recordingStatus" class="recording-status">
+                    Click the microphone to start recording
+                </div>
+                <div id="timer" class="timer">00:00</div>
             </div>
         </div>
 
-        <div id="responseContainer" class="response-container">
+        <!-- Chat display area -->
+        <div class="chat-container">
             <div class="chat-header">
                 <div id="currentChatInfo" class="current-chat-info">New conversation</div>
                 <button id="newChatBtn" class="new-chat-btn">New Chat</button>
             </div>
-            <h3>Assistant Response:</h3>
-            <div id="assistantResponse" class="assistant-response">
-                Waiting for your voice command...
+
+            <!-- Message history display -->
+            <div id="chatMessagesContainer" class="chat-messages-container">
+                <!-- Messages will be added here dynamically -->
+            </div>
+
+            <!-- Current interaction area -->
+            <div class="current-interaction">
+                <div class="transcript-container">
+                    <h3>Your message:</h3>
+                    <div id="transcript" class="transcript-text">
+                        Your spoken words will appear here...
+                    </div>
+                </div>
+
+                <div id="responseContainer" class="response-container">
+                    <h3>Assistant Response:</h3>
+                    <div id="assistantResponse" class="assistant-response">
+                        Waiting for your voice command...
+                    </div>
+                </div>
+
+                <!-- Optional text input -->
+                <form id="textInputForm" class="text-input-form">
+                    <input type="text" id="userTextInput" placeholder="Type a message..." class="user-text-input">
+                    <button type="submit" class="send-button">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </form>
             </div>
         </div>
     </div>
 
-    <!-- Chat History Section - Optional -->
-    <div class="chat-history-container" style="display:none" id="chatHistoryContainer">
+    <!-- Chat History Sidebar -->
+    <div class="chat-history-container" id="chatHistoryContainer">
         <h3>Previous Conversations</h3>
         <div id="chatHistoryList" class="chat-history-list">
             <p>No previous conversations</p>
