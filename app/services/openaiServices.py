@@ -139,27 +139,27 @@ def generateResponse(userMessage, chatId=None):
             raise ValueError(f"Could not add user message to chat: {str(e)}")
 
             # Check if the user is requesting production planning data analysis
-            production_response = None
-            if should_process_production_planning(userMessage):
-                current_app.logger.info(f"Detected production planning request: {userMessage}")
-                try:
-                    # Process the request with production planning processor
-                    production_response = production_processor.process_query(userMessage)
+        production_response = None
+        if should_process_production_planning(userMessage):
+            current_app.logger.info(f"Detected production planning request: {userMessage}")
+            try:
+                # Process the request with production planning processor
+                production_response = production_processor.process_query(userMessage)
 
-                    # If successful, use the response
-                    if production_response and production_response.get('success'):
-                        response_text = production_response.get('message', 'Анализът е завършен.')
+                # If successful, use the response
+                if production_response and production_response.get('success'):
+                    response_text = production_response.get('message', 'Анализът е завършен.')
 
-                        # Add the response to chat history
-                        assistantMsg = Message(chatId=chat.id, role="assistant", content=response_text)
-                        db.session.add(assistantMsg)
-                        chat.updatedAt = db.func.now()
-                        db.session.commit()
+                    # Add the response to chat history
+                    assistantMsg = Message(chatId=chat.id, role="assistant", content=response_text)
+                    db.session.add(assistantMsg)
+                    chat.updatedAt = db.func.now()
+                    db.session.commit()
 
-                        return response_text, chat.id
-                except Exception as e:
-                    current_app.logger.error(f"Error processing production planning query: {str(e)}")
-                    # Continue with normal response generation if production planning processing fails
+                    return response_text, chat.id
+            except Exception as e:
+                current_app.logger.error(f"Error processing production planning query: {str(e)}")
+                # Continue with normal response generation if production planning processing fails
 
         # Get chat history for context (limited to last 10 messages)
         chatMessages = Message.query.filter_by(chatId=chat.id).order_by(Message.createdAt.asc()).limit(10).all()

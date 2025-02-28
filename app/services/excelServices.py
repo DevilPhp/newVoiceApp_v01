@@ -12,9 +12,10 @@ class ProductionPlanningProcessor:
         """Initialize Excel processor with the production planning file."""
         # If file path not provided, use default
         self.file_path = file_path or os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            '../static/data/Production planning 2025.xlsx'
+            os.path.abspath(os.path.dirname(__file__)),
+            '..\static\data\Production planning 2025.xlsx'
         )
+        print(f'Initializing Excel processor with file: {self.file_path}')
 
         # Ensure the data directory exists
         os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
