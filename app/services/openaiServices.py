@@ -5,8 +5,19 @@ from pydub import AudioSegment
 from app.models.chat import Chat
 from app.models.message import Message
 from app.extensions import db
+from app.services.excelServices import ProductionPlanningProcessor
 
 openai.api_key = os.environ.get('OPENAI_API_KEY')
+
+# Initialize the Production Planning processor
+production_processor = ProductionPlanningProcessor()
+
+# Keywords that trigger production planning analysis (in Bulgarian)
+PRODUCTION_TRIGGER_KEYWORDS = [
+    'производство', 'клиент', 'модел', 'файн', 'фирма', 'поръчка', 'изплетено',
+    'конфекционирано', 'справка', 'брой', 'цех', 'изделие', 'месец', 'прогноза',
+    'обобщение', 'планиране', 'статистика'
+]
 
 def transcribeAudioUsingOpenAI(audioFilePath):
     """
@@ -68,6 +79,21 @@ def transcribeAudioUsingOpenAI(audioFilePath):
 
         return
 
+
+def should_process_production_planning(user_message):
+    """
+    Determine if a user message is requesting production planning data analysis.
+
+    Args:
+        user_message (str): The user's message in Bulgarian
+
+    Returns:
+        bool: True if the message should trigger production planning processing
+    """
+    message_lower = user_message.lower()
+    return any(keyword.lower() in message_lower for keyword in PRODUCTION_TRIGGER_KEYWORDS)
+
+
 def generateResponse(userMessage, chatId=None):
     """
         Generate a response using OpenAI's GPT API and store in chat history.
@@ -112,15 +138,49 @@ def generateResponse(userMessage, chatId=None):
             db.session.rollback()
             raise ValueError(f"Could not add user message to chat: {str(e)}")
 
+            # Check if the user is requesting production planning data analysis
+            production_response = None
+            if should_process_production_planning(userMessage):
+                current_app.logger.info(f"Detected production planning request: {userMessage}")
+                try:
+                    # Process the request with production planning processor
+                    production_response = production_processor.process_query(userMessage)
+
+                    # If successful, use the response
+                    if production_response and production_response.get('success'):
+                        response_text = production_response.get('message', 'Анализът е завършен.')
+
+                        # Add the response to chat history
+                        assistantMsg = Message(chatId=chat.id, role="assistant", content=response_text)
+                        db.session.add(assistantMsg)
+                        chat.updatedAt = db.func.now()
+                        db.session.commit()
+
+                        return response_text, chat.id
+                except Exception as e:
+                    current_app.logger.error(f"Error processing production planning query: {str(e)}")
+                    # Continue with normal response generation if production planning processing fails
+
         # Get chat history for context (limited to last 10 messages)
         chatMessages = Message.query.filter_by(chatId=chat.id).order_by(Message.createdAt.asc()).limit(10).all()
 
         # Format messages for OpenAI
         messages = [{"role": "system",
-                     "content": "You are a great knitwear production assistant that responds"
-                                  "to voice commands and can analyse production stats when have access."},]
+                     "content": "You are a helpful knitwear production assistant that responds "
+                                "to voice commands in Bulgarian. You can analyze production planning data "
+                                "related to knitting and confection. When users ask about production, clients, "
+                                "or product data, reference your ability to analyze specific files. "
+                                "Always respond in Bulgarian unless explicitly asked to use another language."}, ]
         for msg in chatMessages:
             messages.append({"role": msg.role, "content": msg.content})
+
+        # If production planning processing was attempted but failed, add context about that
+        if production_response and not production_response.get('success'):
+            messages.append({
+                "role": "system",
+                "content": f"Note: User appears to be requesting production planning analysis, "
+                           f"but the system encountered an issue: {production_response.get('message')}"
+            })
 
         # Log the conversation context
         current_app.logger.info(

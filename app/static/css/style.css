@@ -364,6 +364,108 @@ h1 {
     transform: translateX(5px);
 }
 
+/* Production planning keyword highlighting */
+.production-keyword {
+    background-color: rgba(60, 145, 100, 0.1);
+    color: #3c9164;
+    padding: 0 2px;
+    border-radius: 3px;
+    font-weight: bold;
+}
+
+/* Table styling for production data display */
+.production-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 0.9em;
+}
+
+.production-table th {
+    background-color: #3c9164;
+    color: white;
+    text-align: left;
+    padding: 8px;
+}
+
+.production-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+}
+
+.production-table tr:nth-child(even) {
+    background-color: #f2f8f5;
+}
+
+.production-table tr:hover {
+    background-color: #e0f0e8;
+}
+
+/* Client indicator icon */
+.client-indicator {
+    display: inline-flex;
+    align-items: center;
+    margin-right: 8px;
+    color: #3c9164;
+}
+
+.client-indicator i {
+    margin-right: 4px;
+}
+
+/* Production data visualization area */
+.production-visualization {
+    margin: 15px 0;
+    padding: 10px;
+    background-color: #f9f9f9;
+    border-radius: var(--border-radius);
+    border: 1px solid #eee;
+}
+
+.production-visualization h4 {
+    margin-top: 0;
+    color: #3c9164;
+}
+
+/* Production data summary */
+.production-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 10px 0;
+}
+
+.production-summary-item {
+    background-color: #f5f7fa;
+    padding: 8px 12px;
+    border-radius: 5px;
+    border-left: 3px solid #3c9164;
+    flex: 1 1 calc(50% - 10px);
+    min-width: 150px;
+}
+
+.production-summary-item h5 {
+    margin: 0 0 5px;
+    color: #666;
+}
+
+.production-summary-item p {
+    margin: 0;
+    font-weight: bold;
+    color: #333;
+}
+
+/* Bulgarian specific styling */
+.bg-text {
+    font-family: 'Segoe UI', Arial, sans-serif;
+}
+
+/* Update placeholder text color */
+.user-text-input::placeholder {
+    color: #999;
+    font-style: italic;
+}
+
 footer {
     text-align: center;
     color: #777;

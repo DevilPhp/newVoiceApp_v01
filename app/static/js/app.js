@@ -16,11 +16,19 @@ $(document).ready(function () {
     let recordingTimeout = null;
     const maxRecordingTime = 60000; // 60 seconds
 
+    // Production planning keywords for highlighting in messages (Bulgarian)
+    const productionKeywords = [
+        'производство', 'клиент', 'модел', 'файн', 'фирма', 'поръчка', 'изплетено',
+        'конфекционирано', 'справка', 'брой', 'цех', 'изделие', 'месец', 'прогноза',
+        'обобщение', 'планиране', 'статистика', 'данни', 'пуловер', 'жилетка', 'риза',
+        'троер', 'елек', 'рокля', 'пола', 'шал', 'шапка', 'плетене', 'конфекция'
+    ];
+
     // Check if recording is supported
     if (!AudioRecorder.isSupported()) {
-        alert('Your browser does not support audio recording. Please try another browser.');
+        alert('Вашият браузър не поддържа аудио запис. Моля, използвайте друг браузър.');
         $recordButton.prop('disabled', true);
-        $recordingStatus.text('Recording not supported in this browser');
+        $recordingStatus.text('Записът не се поддържа в този браузър');
         return;
     }
 
@@ -31,7 +39,7 @@ $(document).ready(function () {
         // Set up event handlers
         recorder.onStart = () => {
             $recordButton.addClass('recording');
-            $recordingStatus.text('Recording... (speak now)');
+            $recordingStatus.text('Записване... (говорете сега)');
 
             // Set timeout to automatically stop recording after maxRecordingTime
             recordingTimeout = setTimeout(() => {
@@ -41,7 +49,7 @@ $(document).ready(function () {
 
         recorder.onStop = async (audioBlob) => {
             $recordButton.removeClass('recording');
-            $recordingStatus.text('Processing audio...');
+            $recordingStatus.text('Обработка на аудио...');
 
             // Clear the timeout if it exists
             if (recordingTimeout) {
@@ -55,16 +63,16 @@ $(document).ready(function () {
 
         recorder.onError = (error) => {
             console.error('Recording error:', error);
-            $recordingStatus.text(`Error: ${error.message}`);
+            $recordingStatus.text(`Грешка: ${error.message}`);
             $recordButton.removeClass('recording');
         };
 
         const initialized = await recorder.init();
         if (!initialized) {
-            $recordingStatus.text('Failed to access microphone. Please check permissions.');
+            $recordingStatus.text('Неуспешен достъп до микрофона. Моля, проверете разрешенията.');
             $recordButton.prop('disabled', true);
         } else {
-            $recordingStatus.text('Recorder initialized. Ready to record.');
+            $recordingStatus.text('Записът е инициализиран. Готов за запис.');
         }
     }
 
@@ -102,12 +110,26 @@ $(document).ready(function () {
         }
     }
 
+    // Highlight production planning-related keywords in text
+    function highlightProductionKeywords(text) {
+        if (!text) return '';
+
+        // Create a regex pattern from the keywords array for whole word matches
+        const pattern = new RegExp('\\b(' + productionKeywords.join('|') + ')\\b', 'gi');
+
+        // Replace matches with highlighted versions
+        return text.replace(pattern, '<span class="production-keyword">$1</span>');
+    }
+
     // Parse and render markdown text
     function renderMarkdown(text) {
         if (!text) return '';
 
+        // First highlight production keywords
+        let html = highlightProductionKeywords(text);
+
         // Replace new lines with <br> tags
-        let html = text.replace(/\n/g, '<br>');
+        html = html.replace(/\n/g, '<br>');
 
         // Bold text
         html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
@@ -134,7 +156,7 @@ $(document).ready(function () {
         return html;
     }
 
-    // Format date and time
+    // Format date and time (Bulgarian format)
     function formatDateTime(isoString) {
         const date = new Date(isoString);
         return date.toLocaleString('bg-BG', {
@@ -155,7 +177,7 @@ $(document).ready(function () {
 
         const $messageHeader = $('<div>', {
             class: 'message-header'
-        }).text(role === 'user' ? 'You' : 'Assistant').appendTo($messageContainer);
+        }).text(role === 'user' ? 'Вие' : 'Асистент').appendTo($messageContainer);
 
         const $timestamp = $('<span>', {
             class: 'message-time'
@@ -190,7 +212,7 @@ $(document).ready(function () {
         const { $messageContainer, $messageContent } = createMessageElement(role);
 
         $messageContainer.addClass('loading');
-        $messageContent.text('Thinking...');
+        $messageContent.text(role === 'user' ? 'Обработка на заявката...' : 'Мисля...');
 
         $chatMessagesContainer.append($messageContainer);
         $chatMessagesContainer.scrollTop($chatMessagesContainer[0].scrollHeight);
@@ -236,9 +258,6 @@ $(document).ready(function () {
             $messageContent.text(htmlBuffer);
             $messageContent.append('<span class="typing-cursor">|</span>');
 
-            // Scroll to the bottom change this is you want auto scroll enabled
-            // $chatMessagesContainer.scrollTop($chatMessagesContainer[0].scrollHeight);
-
             // Process the next chunk
             setTimeout(processNextChunk, typingSpeed);
         }
@@ -261,7 +280,7 @@ $(document).ready(function () {
 
         // Check if the blob is too small (likely empty recording)
         if (audioBlob.size < 1000) {  // Less than 1KB
-            $recordingStatus.text('Recording too short or empty. Please try again.');
+            $recordingStatus.text('Записът е твърде кратък или празен. Моля, опитайте отново.');
             return;
         }
 
@@ -273,7 +292,7 @@ $(document).ready(function () {
         formData.append('audio', audioBlob, 'recording.' + (audioBlob.type.split('/')[1] || 'webm'));
 
         try {
-            $recordingStatus.text('Sending audio for transcription...');
+            $recordingStatus.text('Изпращане на аудио за транскрипция...');
 
             // Add user message with loading state first
             const userMessage = addLoadingMessage('user');
@@ -293,9 +312,9 @@ $(document).ready(function () {
 
             // Check for errors
             if (response.error) {
-                $recordingStatus.text(`Error: ${response.error}`);
+                $recordingStatus.text(`Грешка: ${response.error}`);
                 userMessage.$messageContainer.remove();
-                assistantMessage.$messageContent.text(response.response || 'An error occurred. Please try again.');
+                assistantMessage.$messageContent.text(response.response || 'Възникна грешка. Моля, опитайте отново.');
                 assistantMessage.$messageContainer.removeClass('loading');
                 return;
             }
@@ -304,10 +323,10 @@ $(document).ready(function () {
             if (response.transcription) {
                 userMessage.$messageContent.html(renderMarkdown(response.transcription));
                 userMessage.$messageContainer.removeClass('loading');
-                $recordingStatus.text('Transcription complete');
+                $recordingStatus.text('Транскрипцията е завършена');
             } else {
                 userMessage.$messageContainer.remove();
-                $recordingStatus.text('Could not transcribe audio');
+                $recordingStatus.text('Не можах да транскрибирам аудиото');
             }
 
             // Update the assistant message with response
@@ -315,18 +334,18 @@ $(document).ready(function () {
                 assistantMessage.$messageContainer.removeClass('loading');
                 typewriterEffect(assistantMessage.$messageContent, response.response);
             } else {
-                assistantMessage.$messageContent.text('No response available');
+                assistantMessage.$messageContent.text('Няма наличен отговор');
                 assistantMessage.$messageContainer.removeClass('loading');
             }
 
             // Update chat ID
             if (response.chatId) {
                 currentChatId = response.chatId;
-                $currentChatInfo.text(`Conversation #${currentChatId}`);
+                $currentChatInfo.text(`Разговор #${currentChatId}`);
             }
         } catch (error) {
             console.error('Error transcribing audio:', error);
-            $recordingStatus.text(`Error: ${error.statusText || error.message || 'Failed to transcribe audio'}`);
+            $recordingStatus.text(`Грешка: ${error.statusText || error.message || 'Неуспешна транскрипция на аудио'}`);
         }
     }
 
@@ -346,7 +365,7 @@ $(document).ready(function () {
                 console.log("Loaded chat history:", response);
 
                 // Update chat title
-                $currentChatInfo.text(response.title || `Conversation #${chatId}`);
+                $currentChatInfo.text(response.title || `Разговор #${chatId}`);
 
                 // Display messages
                 response.messages.forEach(message => {
@@ -380,7 +399,7 @@ $(document).ready(function () {
                     const $chatItem = $('<div>', {
                         class: 'chat-item',
                         'data-id': chat.id
-                    }).text(`${chat.title || `Chat #${chat.id}`} - ${formatDateTime(chat.updatedAt)}`);
+                    }).text(`${chat.title || `Разговор #${chat.id}`} - ${formatDateTime(chat.updatedAt)}`);
 
                     $chatItem.on('click', () => {
                         currentChatId = chat.id;
@@ -393,22 +412,25 @@ $(document).ready(function () {
                 // Show the chat history container
                 $chatHistoryContainer.show();
             } else {
-                $chatHistoryList.html('<p>No previous conversations</p>');
+                $chatHistoryList.html('<p>Няма предишни разговори</p>');
             }
         } catch (error) {
             console.error('Error loading chats:', error);
-            $chatHistoryList.html('<p>Error loading chat history</p>');
+            $chatHistoryList.html('<p>Грешка при зареждане на историята</p>');
         }
     }
 
     // Start a new chat
     function startNewChat() {
         currentChatId = null;
-        $currentChatInfo.text('New conversation');
+        $currentChatInfo.text('Нов разговор');
         $chatMessagesContainer.empty();
 
         // Add a welcome message
-        addMessageToDisplay('assistant', 'Hello! I\'m your voice assistant. You can speak to me by clicking the microphone button or type your message below.');
+        addMessageToDisplay('assistant', 'Здравейте! Аз съм вашият асистент за производство на плетени изделия. ' +
+            'Можете да ми говорите, като натиснете бутона с микрофона или да въведете съобщение в полето по-долу. ' +
+            'Мога да анализирам данни за планиране на производството - просто ме попитайте за ' +
+            '"справка за производство" или "информация за клиент".');
     }
 
     // Add a function to send text messages directly
@@ -437,12 +459,12 @@ $(document).ready(function () {
                     // Update chat ID if provided
                     if (response.chatId && !currentChatId) {
                         currentChatId = response.chatId;
-                        $currentChatInfo.text(`Conversation #${currentChatId}`);
+                        $currentChatInfo.text(`Разговор #${currentChatId}`);
                     }
                 },
                 error: function (xhr, status, error) {
                     console.error('Error sending text message:', error);
-                    assistantMessage.$messageContent.text('An error occurred. Please try again.');
+                    assistantMessage.$messageContent.text('Възникна грешка. Моля, опитайте отново.');
                     assistantMessage.$messageContainer.removeClass('loading');
                 }
             });
@@ -459,7 +481,7 @@ $(document).ready(function () {
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState !== 'visible' && recorder && recorder.isRecording) {
             stopRecording();
-            $recordingStatus.text('Recording stopped: tab lost focus');
+            $recordingStatus.text('Записът спрян: табът загуби фокус');
         }
     });
 

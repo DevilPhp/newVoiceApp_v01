@@ -1,0 +1,1082 @@
+import os
+import pandas as pd
+from flask import current_app
+import re
+import datetime
+from datetime import date, timedelta
+import numpy as np
+
+
+class ProductionPlanningProcessor:
+    def __init__(self, file_path=None):
+        """Initialize Excel processor with the production planning file."""
+        # If file path not provided, use default
+        self.file_path = file_path or os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            '../static/data/Production planning 2025.xlsx'
+        )
+
+        # Ensure the data directory exists
+        os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
+
+        # Key Bulgarian keywords for intent detection
+        self.bulgarian_keywords = {
+            'summary': ['обобщение', 'резюме', 'справка', 'информация', 'статистика', 'данни', 'покажи'],
+            'client': ['клиент', 'фирма', 'компания', 'марка'],
+            'product': ['продукт', 'артикул', 'модел', 'изделие', 'стока'],
+            'production': ['производство', 'изработка', 'изплетено', 'изработено', 'конфекционирано'],
+            'planning': ['планиране', 'план', 'график', 'прогноза', 'очаквано'],
+            'date': ['дата', 'ден', 'днес', 'утре', 'седмица', 'месец'],
+            'quantity': ['количество', 'бройки', 'брой', 'бр'],
+            'color': ['цвят', 'цветове'],
+            'type': ['вид', 'тип', 'видове'],
+            'factory': ['цех', 'работилница', 'фабрика', 'етаж']
+        }
+
+        # Common translation mappings (product types, month names)
+        self.product_type_mappings = {
+            'пуловер': 'пуловер',
+            'жилетка': 'жилетка',
+            'жилетка с копчета': 'жил с коп',
+            'жилетка с цип': 'жил с цип',
+            'риза': 'риза',
+            'риза с копчета': 'риза с к-та',
+            'троер': 'троер',
+            'елек': 'елек',
+            'рокля': 'рокля',
+            'пола': 'пола',
+            'шал': 'шал',
+            'шапка': 'шапка'
+        }
+
+        self.month_mappings = {
+            'януари': 1,
+            'февруари': 2,
+            'март': 3,
+            'април': 4,
+            'май': 5,
+            'юни': 6,
+            'юли': 7,
+            'август': 8,
+            'септември': 9,
+            'октомври': 10,
+            'ноември': 11,
+            'декември': 12
+        }
+
+        # Cache for loaded data
+        self.cached_data = {}
+
+    def load_workbook(self):
+        """Load the Excel workbook with all sheets."""
+        if not os.path.exists(self.file_path):
+            raise FileNotFoundError(f"File not found: {self.file_path}")
+
+        try:
+            return pd.ExcelFile(self.file_path)
+        except Exception as e:
+            current_app.logger.error(f"Error loading Excel file: {str(e)}")
+            raise Exception(f"Грешка при зареждане на файла: {str(e)}")
+
+    def get_sheet_data(self, sheet_name):
+        """Get data from a specific sheet, with caching."""
+        # Check if data is in cache
+        if sheet_name in self.cached_data:
+            return self.cached_data[sheet_name]
+
+        # Load the data if not cached
+        try:
+            excel_file = self.load_workbook()
+            df = pd.read_excel(excel_file, sheet_name=sheet_name)
+
+            # Cache the data
+            self.cached_data[sheet_name] = df
+            return df
+        except Exception as e:
+            current_app.logger.error(f"Error loading sheet '{sheet_name}': {str(e)}")
+            raise Exception(f"Грешка при зареждане на данните от лист '{sheet_name}': {str(e)}")
+
+    def get_all_sheet_names(self):
+        """Get all sheet names in the workbook."""
+        try:
+            excel_file = self.load_workbook()
+            return excel_file.sheet_names
+        except Exception as e:
+            current_app.logger.error(f"Error getting sheet names: {str(e)}")
+            raise Exception(f"Грешка при извличане на имената на листовете: {str(e)}")
+
+    def clean_dataframe(self, df):
+        """Clean the dataframe by removing header rows and fixing column names."""
+        try:
+            # Check if this is likely a header row by looking for common header terms
+            if isinstance(df.iloc[0, 0], str) and any(
+                    term in df.iloc[0, 0].lower() for term in ['фирма', 'company', 'производство']):
+                # This is a header row, let's set it as column names if possible
+                # First, preserve the original column names as they might be important
+                original_columns = df.columns.tolist()
+
+                # Extract the header row and skip it
+                header_row = df.iloc[0].tolist()
+                df = df.iloc[1:].reset_index(drop=True)
+
+                # Set meaningful column names where available
+                for i, header in enumerate(header_row):
+                    if i < len(original_columns) and isinstance(header, str) and header.strip():
+                        df.rename(columns={original_columns[i]: header.strip()}, inplace=True)
+
+            # Replace empty strings with NaN for better processing
+            df.replace('', np.nan, inplace=True)
+
+            return df
+        except Exception as e:
+            current_app.logger.error(f"Error cleaning dataframe: {str(e)}")
+            return df  # Return original if cleaning fails
+
+    def detect_query_intent(self, user_message):
+        """
+        Detect intent from Bulgarian language user message.
+
+        Args:
+            user_message: string with user's query in Bulgarian
+
+        Returns:
+            tuple (intent_type, params) with the detected intent and parameters
+        """
+        message = user_message.lower()
+
+        # Initialize results
+        intent_type = "summary"  # Default intent
+        params = {}
+
+        # Check for each intent type based on keyword presence
+        intent_scores = {}
+        for intent, keywords in self.bulgarian_keywords.items():
+            score = sum(1 for keyword in keywords if keyword in message)
+            intent_scores[intent] = score
+
+        # Get the intent with the highest score
+        primary_intent = max(intent_scores, key=intent_scores.get)
+        if intent_scores[primary_intent] > 0:
+            intent_type = primary_intent
+
+        # Extract client name if present
+        client_match = re.search(r'(?:клиент|фирма|марка)\s+(\w+)', message)
+        if client_match:
+            params['client'] = client_match.group(1)
+        elif 'клиент' in message or 'фирма' in message or 'марка' in message:
+            # If client intent but no specific client, check for client names in the message
+            common_clients = ['matinique', 'lebek', 'мультиниче', 'лебек']
+            for client in common_clients:
+                if client in message.lower():
+                    params['client'] = client
+                    break
+
+        # Extract product type if present
+        for product_type, db_match in self.product_type_mappings.items():
+            if product_type in message:
+                params['product_type'] = db_match
+                break
+
+        # Extract month if present
+        for month_name, month_num in self.month_mappings.items():
+            if month_name in message:
+                params['month'] = month_num
+                params['month_name'] = month_name
+                break
+
+        # Extract date references
+        today = date.today()
+        if 'днес' in message:
+            params['date'] = today.strftime('%Y-%m-%d')
+        elif 'утре' in message:
+            params['date'] = (today + timedelta(days=1)).strftime('%Y-%m-%d')
+        elif 'вчера' in message:
+            params['date'] = (today - timedelta(days=1)).strftime('%Y-%m-%d')
+
+        # Extract factory/workshop if mentioned
+        factory_match = re.search(r'(?:цех|етаж)\s+(\w+|\d+(?:-ти)?)', message)
+        if factory_match:
+            params['factory'] = factory_match.group(1)
+
+        return intent_type, params
+
+    def get_client_list(self):
+        """Get a list of all clients from the Excel file."""
+        try:
+            # Get data from both main sheets
+            knitting_df = self.clean_dataframe(self.get_sheet_data('pletene'))
+            confection_df = self.clean_dataframe(self.get_sheet_data('confekcia'))
+
+            # Get all client names from first column, usually "Фирма" or similar
+            clients_knitting = set()
+            clients_confection = set()
+
+            if not knitting_df.empty:
+                clients_knitting = set(knitting_df.iloc[:, 0].dropna().unique())
+
+            if not confection_df.empty:
+                clients_confection = set(confection_df.iloc[:, 0].dropna().unique())
+
+            # Combine and filter out non-client entries (often headers or empty)
+            all_clients = clients_knitting.union(clients_confection)
+            valid_clients = [client for client in all_clients
+                             if isinstance(client, str)
+                             and client.strip()
+                             and client.lower() not in ['фирма', 'company', 'производство']]
+
+            return sorted(valid_clients)
+        except Exception as e:
+            current_app.logger.error(f"Error getting client list: {str(e)}")
+            return []
+
+    def match_client_name(self, client_query):
+        """Find the best matching client name from the available clients."""
+        if not client_query:
+            return None
+
+        client_query = client_query.lower()
+        client_list = self.get_client_list()
+
+        # Direct match
+        for client in client_list:
+            if client.lower() == client_query:
+                return client
+
+        # Partial match
+        matches = []
+        for client in client_list:
+            if client_query in client.lower() or client.lower() in client_query:
+                matches.append((client, len(client) / len(client_query) if len(client_query) > 0 else 0))
+
+        if matches:
+            # Sort by score (closest length ratio)
+            matches.sort(key=lambda x: abs(1 - x[1]))
+            return matches[0][0]
+
+        return None
+
+    def get_product_types(self):
+        """Get all product types from the Excel file."""
+        try:
+            # Try to get product type data from both sheets
+            knitting_df = self.clean_dataframe(self.get_sheet_data('pletene'))
+            confection_df = self.clean_dataframe(self.get_sheet_data('confekcia'))
+
+            product_types = set()
+
+            # Look for a column that might contain product types (usually "вид" or similar)
+            for df in [knitting_df, confection_df]:
+                if df.empty:
+                    continue
+
+                # Try to find the product type column
+                type_col = None
+                for i, col in enumerate(df.columns):
+                    if isinstance(col, str) and 'вид' in col.lower():
+                        type_col = col
+                        break
+
+                # If not found by name, try column 5 which often contains product types
+                if type_col is None and len(df.columns) > 5:
+                    type_col = df.columns[5]
+
+                if type_col is not None:
+                    types = df[type_col].dropna().unique()
+                    product_types.update([t for t in types if isinstance(t, str) and t.strip()])
+
+            return sorted(product_types)
+        except Exception as e:
+            current_app.logger.error(f"Error getting product types: {str(e)}")
+            return []
+
+    def match_product_type(self, product_query):
+        """Find the best matching product type from the available types."""
+        if not product_query:
+            return None
+
+        product_query = product_query.lower()
+        product_types = self.get_product_types()
+
+        # Direct match
+        for product_type in product_types:
+            if product_type.lower() == product_query:
+                return product_type
+
+        # Partial match
+        matches = []
+        for product_type in product_types:
+            if product_query in product_type.lower() or product_type.lower() in product_query:
+                matches.append((product_type, len(product_type) / len(product_query) if len(product_query) > 0 else 0))
+
+        if matches:
+            # Sort by score (closest length ratio)
+            matches.sort(key=lambda x: abs(1 - x[1]))
+            return matches[0][0]
+
+        return None
+
+    def get_factory_list(self):
+        """Get a list of all factories/workshops from the Excel file."""
+        try:
+            # Get data from both main sheets
+            knitting_df = self.clean_dataframe(self.get_sheet_data('pletene'))
+            confection_df = self.clean_dataframe(self.get_sheet_data('confekcia'))
+
+            factories = set()
+
+            # Try to find the factory/workshop column (usually "цех" or similar)
+            for df in [knitting_df, confection_df]:
+                if df.empty:
+                    continue
+
+                factory_col = None
+                for i, col in enumerate(df.columns):
+                    if isinstance(col, str) and 'цех' in col.lower():
+                        factory_col = col
+                        break
+
+                # If not found by name, try column 3 which often contains factory info
+                if factory_col is None and len(df.columns) > 3:
+                    factory_col = df.columns[3]
+
+                if factory_col is not None:
+                    factory_list = df[factory_col].dropna().unique()
+                    factories.update([f for f in factory_list if isinstance(f, str) and f.strip()])
+
+            return sorted(factories)
+        except Exception as e:
+            current_app.logger.error(f"Error getting factory list: {str(e)}")
+            return []
+
+    def get_client_info(self, client_query):
+        """Get detailed information about a specific client."""
+        results = {}
+
+        try:
+            client_name = self.match_client_name(client_query)
+
+            if not client_name:
+                return {
+                    'client_found': False,
+                    'message': f"Не намерих клиент, съответстващ на '{client_query}'. Опитайте с друго име."
+                }
+
+            # Load and clean the data from both sheets
+            knitting_df = self.clean_dataframe(self.get_sheet_data('pletene'))
+            confection_df = self.clean_dataframe(self.get_sheet_data('confekcia'))
+
+            # Filter by client name
+            client_knitting = knitting_df[
+                knitting_df.iloc[:, 0] == client_name] if not knitting_df.empty else pd.DataFrame()
+            client_confection = confection_df[
+                confection_df.iloc[:, 0] == client_name] if not confection_df.empty else pd.DataFrame()
+
+            # Check if we found any data
+            if client_knitting.empty and client_confection.empty:
+                return {
+                    'client_found': False,
+                    'client_name': client_name,
+                    'message': f"Намерих клиент '{client_name}', но нямам данни за него."
+                }
+
+            # Initialize results dictionary
+            results = {
+                'client_found': True,
+                'client_name': client_name,
+                'knitting_data': {},
+                'confection_data': {},
+                'product_types': set(),
+                'monthly_data': {},
+                'total_ordered': 0,
+                'total_knitted': 0,
+                'total_confectioned': 0
+            }
+
+            # Extract product types
+            # First find the column with product types (usually "вид" or column 5)
+            knitting_type_col = None
+            confection_type_col = None
+
+            for df, col_var in [(knitting_df, 'knitting_type_col'), (confection_df, 'confection_type_col')]:
+                if df.empty:
+                    continue
+
+                for i, col in enumerate(df.columns):
+                    if isinstance(col, str) and 'вид' in col.lower():
+                        locals()[col_var] = col
+                        break
+
+                # If not found by name, try column 5
+                if locals()[col_var] is None and len(df.columns) > 5:
+                    locals()[col_var] = df.columns[5]
+
+            # Get product types
+            if knitting_type_col and not client_knitting.empty:
+                types = client_knitting[knitting_type_col].dropna().unique()
+                results['product_types'].update([t for t in types if isinstance(t, str) and t.strip()])
+
+            if confection_type_col and not client_confection.empty:
+                types = client_confection[confection_type_col].dropna().unique()
+                results['product_types'].update([t for t in types if isinstance(t, str) and t.strip()])
+
+            # Get order quantities
+            # Try to find order quantity column (usually "Поръчка" or column 2)
+            order_col = None
+            for i, col in enumerate(knitting_df.columns):
+                if isinstance(col, str) and 'поръчка' in col.lower():
+                    order_col = col
+                    break
+
+            if order_col is None and len(knitting_df.columns) > 2:
+                order_col = knitting_df.columns[2]
+
+            if order_col and not client_knitting.empty:
+                client_orders = client_knitting[order_col].sum()
+                if not pd.isna(client_orders):
+                    results['total_ordered'] = client_orders
+
+            # Get knitting and confection quantities
+            # Look for specific columns with production data
+            knitting_col = None
+            confection_col = None
+
+            # Try to find columns with specific keywords
+            for df, col_name, keywords in [
+                (knitting_df, 'knitting_col', ['изплетено до момента', 'изплетено', 'изработено']),
+                (confection_df, 'confection_col', ['конфекционирано до момента', 'конфекционирано'])
+            ]:
+                if df.empty:
+                    continue
+
+                for col in df.columns:
+                    if isinstance(col, str) and any(keyword in col.lower() for keyword in keywords):
+                        locals()[col_name] = col
+                        break
+
+            # Get the knitting quantity
+            if knitting_col and not client_knitting.empty:
+                knitting_qty = client_knitting[knitting_col].sum()
+                if not pd.isna(knitting_qty):
+                    results['total_knitted'] = knitting_qty
+
+            # Get the confection quantity
+            if confection_col and not client_confection.empty:
+                confection_qty = client_confection[confection_col].sum()
+                if not pd.isna(confection_qty):
+                    results['total_confectioned'] = confection_qty
+
+            # Get monthly data
+            month_cols = ['януари', 'февруари', 'март', 'април', 'май', 'юни',
+                          'юли', 'август', 'септември', 'октомври', 'ноември', 'декември']
+
+            for df, data_type in [(client_knitting, 'knitting'), (client_confection, 'confection')]:
+                if df.empty:
+                    continue
+
+                for month in month_cols:
+                    # Try to find the month column
+                    month_col = None
+                    for col in df.columns:
+                        if isinstance(col, str) and month.lower() in col.lower():
+                            month_col = col
+                            break
+
+                    if month_col:
+                        monthly_qty = df[month_col].sum()
+                        if not pd.isna(monthly_qty) and monthly_qty > 0:
+                            if month not in results['monthly_data']:
+                                results['monthly_data'][month] = {}
+                            results['monthly_data'][month][data_type] = monthly_qty
+
+            # Get details for each product type
+            if knitting_type_col and not client_knitting.empty:
+                results['product_details'] = {}
+
+                for product_type in results['product_types']:
+                    product_knitting = client_knitting[client_knitting[knitting_type_col] == product_type]
+                    product_confection = pd.DataFrame()
+
+                    if confection_type_col and not client_confection.empty:
+                        product_confection = client_confection[client_confection[confection_type_col] == product_type]
+
+                    if not product_knitting.empty or not product_confection.empty:
+                        prod_details = {
+                            'ordered': 0,
+                            'knitted': 0,
+                            'confectioned': 0,
+                            'monthly_data': {}
+                        }
+
+                        # Get order quantity for this product
+                        if order_col and not product_knitting.empty:
+                            prod_orders = product_knitting[order_col].sum()
+                            if not pd.isna(prod_orders):
+                                prod_details['ordered'] = prod_orders
+
+                        # Get knitting quantity for this product
+                        if knitting_col and not product_knitting.empty:
+                            prod_knitting = product_knitting[knitting_col].sum()
+                            if not pd.isna(prod_knitting):
+                                prod_details['knitted'] = prod_knitting
+
+                        # Get confection quantity for this product
+                        if confection_col and not product_confection.empty:
+                            prod_confection = product_confection[confection_col].sum()
+                            if not pd.isna(prod_confection):
+                                prod_details['confectioned'] = prod_confection
+
+                        # Get monthly data for this product
+                        for df, data_type in [(product_knitting, 'knitting'), (product_confection, 'confection')]:
+                            if df.empty:
+                                continue
+
+                            for month in month_cols:
+                                # Try to find the month column
+                                month_col = None
+                                for col in df.columns:
+                                    if isinstance(col, str) and month.lower() in col.lower():
+                                        month_col = col
+                                        break
+
+                                if month_col:
+                                    monthly_qty = df[month_col].sum()
+                                    if not pd.isna(monthly_qty) and monthly_qty > 0:
+                                        if month not in prod_details['monthly_data']:
+                                            prod_details['monthly_data'][month] = {}
+                                        prod_details['monthly_data'][month][data_type] = monthly_qty
+
+                        results['product_details'][product_type] = prod_details
+
+            return results
+
+        except Exception as e:
+            current_app.logger.error(f"Error getting client info: {str(e)}")
+            return {
+                'client_found': False,
+                'error': str(e),
+                'message': f"Възникна грешка при извличане на информация за клиент: {str(e)}"
+            }
+
+    def get_product_info(self, product_type_query):
+        """Get detailed information about a specific product type."""
+        results = {}
+
+        try:
+            product_type = self.match_product_type(product_type_query)
+
+            if not product_type:
+                return {
+                    'product_found': False,
+                    'message': f"Не намерих продукт, съответстващ на '{product_type_query}'. Опитайте с друг тип продукт."
+                }
+
+            # Load and clean the data from both sheets
+            knitting_df = self.clean_dataframe(self.get_sheet_data('pletene'))
+            confection_df = self.clean_dataframe(self.get_sheet_data('confekcia'))
+
+            # Find product type column
+            knitting_type_col = None
+            confection_type_col = None
+
+            for df, col_var in [(knitting_df, 'knitting_type_col'), (confection_df, 'confection_type_col')]:
+                if df.empty:
+                    continue
+
+                for i, col in enumerate(df.columns):
+                    if isinstance(col, str) and 'вид' in col.lower():
+                        locals()[col_var] = col
+                        break
+
+                # If not found by name, try column 5
+                if locals()[col_var] is None and len(df.columns) > 5:
+                    locals()[col_var] = df.columns[5]
+
+            # Filter by product type
+            product_knitting = knitting_df[knitting_df[
+                                               knitting_type_col] == product_type] if knitting_type_col and not knitting_df.empty else pd.DataFrame()
+            product_confection = confection_df[confection_df[
+                                                   confection_type_col] == product_type] if confection_type_col and not confection_df.empty else pd.DataFrame()
+
+            # Check if we found any data
+            if product_knitting.empty and product_confection.empty:
+                return {
+                    'product_found': False,
+                    'product_type': product_type,
+                    'message': f"Намерих продукт '{product_type}', но нямам данни за него."
+                }
+
+            # Initialize results dictionary
+            results = {
+                'product_found': True,
+                'product_type': product_type,
+                'clients': set(),
+                'knitting_data': {},
+                'confection_data': {},
+                'monthly_data': {},
+                'total_ordered': 0,
+                'total_knitted': 0,
+                'total_confectioned': 0
+            }
+
+            # Get clients for this product
+            if not product_knitting.empty:
+                clients = product_knitting.iloc[:, 0].dropna().unique()
+                results['clients'].update([c for c in clients if isinstance(c, str) and c.strip()])
+
+            if not product_confection.empty:
+                clients = product_confection.iloc[:, 0].dropna().unique()
+                results['clients'].update([c for c in clients if isinstance(c, str) and c.strip()])
+
+            # Get order quantities
+            # Try to find order quantity column (usually "Поръчка" or column 2)
+            order_col = None
+            for i, col in enumerate(knitting_df.columns):
+                if isinstance(col, str) and 'поръчка' in col.lower():
+                    order_col = col
+                    break
+
+            if order_col is None and len(knitting_df.columns) > 2:
+                order_col = knitting_df.columns[2]
+
+            if order_col and not product_knitting.empty:
+                product_orders = product_knitting[order_col].sum()
+                if not pd.isna(product_orders):
+                    results['total_ordered'] = product_orders
+
+            # Get knitting and confection quantities
+            # Look for specific columns with production data
+            knitting_col = None
+            confection_col = None
+
+            # Try to find columns with specific keywords
+            for df, col_name, keywords in [
+                (knitting_df, 'knitting_col', ['изплетено до момента', 'изплетено', 'изработено']),
+                (confection_df, 'confection_col', ['конфекционирано до момента', 'конфекционирано'])
+            ]:
+                if df.empty:
+                    continue
+
+                for col in df.columns:
+                    if isinstance(col, str) and any(keyword in col.lower() for keyword in keywords):
+                        locals()[col_name] = col
+                        break
+
+            # Get the knitting quantity
+            if knitting_col and not product_knitting.empty:
+                knitting_qty = product_knitting[knitting_col].sum()
+                if not pd.isna(knitting_qty):
+                    results['total_knitted'] = knitting_qty
+
+            # Get the confection quantity
+            if confection_col and not product_confection.empty:
+                confection_qty = product_confection[confection_col].sum()
+                if not pd.isna(confection_qty):
+                    results['total_confectioned'] = confection_qty
+
+            # Get monthly data
+            month_cols = ['януари', 'февруари', 'март', 'април', 'май', 'юни',
+                          'юли', 'август', 'септември', 'октомври', 'ноември', 'декември']
+
+            for df, data_type in [(product_knitting, 'knitting'), (product_confection, 'confection')]:
+                if df.empty:
+                    continue
+
+                for month in month_cols:
+                    # Try to find the month column
+                    month_col = None
+                    for col in df.columns:
+                        if isinstance(col, str) and month.lower() in col.lower():
+                            month_col = col
+                            break
+
+                    if month_col:
+                        monthly_qty = df[month_col].sum()
+                        if not pd.isna(monthly_qty) and monthly_qty > 0:
+                            if month not in results['monthly_data']:
+                                results['monthly_data'][month] = {}
+                            results['monthly_data'][month][data_type] = monthly_qty
+
+            # Get details for each client
+            results['client_details'] = {}
+
+            for client in results['clients']:
+                client_knitting = product_knitting[
+                    product_knitting.iloc[:, 0] == client] if not product_knitting.empty else pd.DataFrame()
+                client_confection = product_confection[
+                    product_confection.iloc[:, 0] == client] if not product_confection.empty else pd.DataFrame()
+
+                if not client_knitting.empty or not client_confection.empty:
+                    client_details = {
+                        'ordered': 0,
+                        'knitted': 0,
+                        'confectioned': 0,
+                        'monthly_data': {}
+                    }
+
+                    # Get order quantity for this client
+                    if order_col and not client_knitting.empty:
+                        client_orders = client_knitting[order_col].sum()
+                        if not pd.isna(client_orders):
+                            client_details['ordered'] = client_orders
+
+                    # Get knitting quantity for this client
+                    if knitting_col and not client_knitting.empty:
+                        client_knitting_qty = client_knitting[knitting_col].sum()
+                        if not pd.isna(client_knitting_qty):
+                            client_details['knitted'] = client_knitting_qty
+
+                    # Get confection quantity for this client
+                    if confection_col and not client_confection.empty:
+                        client_confection_qty = client_confection[confection_col].sum()
+                        if not pd.isna(client_confection_qty):
+                            client_details['confectioned'] = client_confection_qty
+
+                    # Get monthly data for this client
+                    for df, data_type in [(client_knitting, 'knitting'), (client_confection, 'confection')]:
+                        if df.empty:
+                            continue
+
+                        for month in month_cols:
+                            # Try to find the month column
+                            month_col = None
+                            for col in df.columns:
+                                if isinstance(col, str) and month.lower() in col.lower():
+                                    month_col = col
+                                    break
+
+                            if month_col:
+                                monthly_qty = df[month_col].sum()
+                                if not pd.isna(monthly_qty) and monthly_qty > 0:
+                                    if month not in client_details['monthly_data']:
+                                        client_details['monthly_data'][month] = {}
+                                    client_details['monthly_data'][month][data_type] = monthly_qty
+
+                    results['client_details'][client] = client_details
+
+            return results
+
+        except Exception as e:
+            current_app.logger.error(f"Error getting product info: {str(e)}")
+            return {
+                'product_found': False,
+                'error': str(e),
+                'message': f"Възникна грешка при извличане на информация за продукт: {str(e)}"
+            }
+
+    def generate_response_message(self, intent_type, params, results):
+        """Generate a human-readable response in Bulgarian based on analysis results."""
+        if 'error' in results:
+            return f"Възникна грешка при анализа: {results['error']}"
+
+        messages = []
+
+        # Generate message based on intent type
+        if intent_type == 'client':
+            # Client information
+            if not results.get('client_found', False):
+                return results.get('message', 'Не успях да намеря информация за този клиент.')
+
+            client_name = results['client_name']
+            messages.append(f"Информация за клиент {client_name}:")
+
+            total_ordered = results.get('total_ordered', 0)
+            total_knitted = results.get('total_knitted', 0)
+            total_confectioned = results.get('total_confectioned', 0)
+
+            if total_ordered > 0:
+                messages.append(f"- Общо поръчани: {total_ordered} бр.")
+
+            messages.append(f"- Общо изплетени: {total_knitted} бр.")
+            messages.append(f"- Общо конфекционирани: {total_confectioned} бр.")
+
+            if 'product_types' in results and results['product_types']:
+                product_types_str = ', '.join(results['product_types'])
+                messages.append(f"- Видове изделия: {product_types_str}")
+
+            # Add monthly data if available
+            if 'monthly_data' in results and results['monthly_data']:
+                messages.append("\nМесечно разпределение:")
+
+                for month, data in results['monthly_data'].items():
+                    month_total = sum(data.values())
+                    if month_total > 0:
+                        month_details = []
+                        if 'knitting' in data and data['knitting'] > 0:
+                            month_details.append(f"плетене: {data['knitting']} бр.")
+                        if 'confection' in data and data['confection'] > 0:
+                            month_details.append(f"конфекция: {data['confection']} бр.")
+
+                        month_info = ", ".join(month_details)
+                        messages.append(f"- {month}: {month_info}")
+
+            # Add product details if available
+            if 'product_details' in results and results['product_details']:
+                messages.append("\nИнформация по видове изделия:")
+
+                for product_type, details in results['product_details'].items():
+                    product_total = details.get('knitted', 0) + details.get('confectioned', 0)
+                    if product_total > 0:
+                        messages.append(f"- {product_type}: общо {product_total} бр. "
+                                        f"(изплетени: {details.get('knitted', 0)}, "
+                                        f"конфекционирани: {details.get('confectioned', 0)})")
+
+        elif intent_type == 'product':
+            # Product information
+            if not results.get('product_found', False):
+                return results.get('message', 'Не успях да намеря информация за този продукт.')
+
+            product_type = results['product_type']
+            messages.append(f"Информация за продукт '{product_type}':")
+
+            total_ordered = results.get('total_ordered', 0)
+            total_knitted = results.get('total_knitted', 0)
+            total_confectioned = results.get('total_confectioned', 0)
+
+            if total_ordered > 0:
+                messages.append(f"- Общо поръчани: {total_ordered} бр.")
+
+            messages.append(f"- Общо изплетени: {total_knitted} бр.")
+            messages.append(f"- Общо конфекционирани: {total_confectioned} бр.")
+
+            if 'clients' in results and results['clients']:
+                num_clients = len(results['clients'])
+                clients_str = ', '.join(list(results['clients'])[:5])
+                if num_clients > 5:
+                    clients_str += f" и още {num_clients - 5}"
+
+                messages.append(f"- Клиенти: {clients_str}")
+
+            # Add monthly data if available
+            if 'monthly_data' in results and results['monthly_data']:
+                messages.append("\nМесечно разпределение:")
+
+                for month, data in results['monthly_data'].items():
+                    month_total = sum(data.values())
+                    if month_total > 0:
+                        month_details = []
+                        if 'knitting' in data and data['knitting'] > 0:
+                            month_details.append(f"плетене: {data['knitting']} бр.")
+                        if 'confection' in data and data['confection'] > 0:
+                            month_details.append(f"конфекция: {data['confection']} бр.")
+
+                        month_info = ", ".join(month_details)
+                        messages.append(f"- {month}: {month_info}")
+
+            # Add client details if available
+            if 'client_details' in results and results['client_details']:
+                messages.append("\nИнформация по клиенти:")
+
+                # Sort clients by total production
+                sorted_clients = sorted(
+                    results['client_details'].items(),
+                    key=lambda x: x[1].get('knitted', 0) + x[1].get('confectioned', 0),
+                    reverse=True
+                )
+
+                # Show top 5 clients
+                for client, details in sorted_clients[:5]:
+                    client_total = details.get('knitted', 0) + details.get('confectioned', 0)
+                    if client_total > 0:
+                        messages.append(f"- {client}: общо {client_total} бр. "
+                                        f"(изплетени: {details.get('knitted', 0)}, "
+                                        f"конфекционирани: {details.get('confectioned', 0)})")
+
+                if len(sorted_clients) > 5:
+                    messages.append(f"...и още {len(sorted_clients) - 5} клиенти")
+
+        elif intent_type == 'planning':
+            # Monthly planning
+            if 'month_name' in results:
+                month_name = results['month_name']
+                messages.append(f"Производствен план за месец {month_name}:")
+
+                knitting_total = results.get('knitting_total', 0)
+                confection_total = results.get('confection_total', 0)
+
+                messages.append(f"- Общо за плетене: {knitting_total} бр.")
+                messages.append(f"- Общо за конфекция: {confection_total} бр.")
+                messages.append(f"- Общо производство: {knitting_total + confection_total} бр.")
+
+                # Add client information
+                if 'clients' in results and results['clients']:
+                    messages.append("\nТоп клиенти за месеца:")
+
+                    # Display top 5 clients
+                    for i, client in enumerate(results['clients'][:5], 1):
+                        client_total = client['total']
+                        client_info = []
+
+                        if client['knitting'] > 0:
+                            client_info.append(f"плетене: {client['knitting']} бр.")
+                        if client['confection'] > 0:
+                            client_info.append(f"конфекция: {client['confection']} бр.")
+
+                        client_details = ", ".join(client_info)
+                        messages.append(f"{i}. {client['name']}: общо {client_total} бр. ({client_details})")
+
+                    if len(results['clients']) > 5:
+                        messages.append(f"...и още {len(results['clients']) - 5} клиенти")
+
+                # Add product type information
+                if 'product_types' in results and results['product_types']:
+                    messages.append("\nТоп продукти за месеца:")
+
+                    # Display top 5 product types
+                    for i, product in enumerate(results['product_types'][:5], 1):
+                        product_total = product['total']
+                        product_info = []
+
+                        if product['knitting'] > 0:
+                            product_info.append(f"плетене: {product['knitting']} бр.")
+                        if product['confection'] > 0:
+                            product_info.append(f"конфекция: {product['confection']} бр.")
+
+                        product_details = ", ".join(product_info)
+                        messages.append(f"{i}. {product['type']}: общо {product_total} бр. ({product_details})")
+
+                    if len(results['product_types']) > 5:
+                        messages.append(f"...и още {len(results['product_types']) - 5} вида продукти")
+
+                # Add factory information
+                if 'factories' in results and results['factories']:
+                    messages.append("\nПроизводство по цехове:")
+
+                    # Display all factories
+                    for factory in results['factories']:
+                        factory_total = factory['total']
+                        factory_info = []
+
+                        if factory['knitting'] > 0:
+                            factory_info.append(f"плетене: {factory['knitting']} бр.")
+                        if factory['confection'] > 0:
+                            factory_info.append(f"конфекция: {factory['confection']} бр.")
+
+                        factory_details = ", ".join(factory_info)
+                        messages.append(f"- {factory['name']}: общо {factory_total} бр. ({factory_details})")
+
+            else:
+                # Yearly planning
+                messages.append("Годишен производствен план:")
+
+                yearly_knitting = results.get('yearly_knitting', 0)
+                yearly_confection = results.get('yearly_confection', 0)
+                yearly_total = results.get('yearly_total', 0)
+
+                messages.append(f"- Общо за плетене: {yearly_knitting} бр.")
+                messages.append(f"- Общо за конфекция: {yearly_confection} бр.")
+                messages.append(f"- Общо производство: {yearly_total} бр.")
+
+                # Add monthly breakdown
+                if 'monthly_totals' in results and results['monthly_totals']:
+                    messages.append("\nРазпределение по месеци:")
+
+                    for month, data in results['monthly_totals'].items():
+                        if data['total'] > 0:
+                            messages.append(f"- {month}: общо {data['total']} бр. "
+                                            f"(плетене: {data['knitting']}, конфекция: {data['confection']})")
+
+                # Add client information
+                if 'clients' in results and results['clients']:
+                    messages.append("\nТоп клиенти за годината:")
+
+                    # Display top 5 clients
+                    for i, client in enumerate(results['clients'][:5], 1):
+                        client_total = client['total']
+                        client_info = []
+
+                        if client['knitting'] > 0:
+                            client_info.append(f"плетене: {client['knitting']} бр.")
+                        if client['confection'] > 0:
+                            client_info.append(f"конфекция: {client['confection']} бр.")
+
+                        client_details = ", ".join(client_info)
+                        messages.append(f"{i}. {client['name']}: общо {client_total} бр. ({client_details})")
+
+                    if len(results['clients']) > 5:
+                        messages.append(f"...и още {len(results['clients']) - 5} клиенти")
+
+                # Add product type information
+                if 'product_types' in results and results['product_types']:
+                    messages.append("\nТоп продукти за годината:")
+
+                    # Display top 5 product types
+                    for i, product in enumerate(results['product_types'][:5], 1):
+                        product_total = product['total']
+                        product_info = []
+
+                        if product['knitting'] > 0:
+                            product_info.append(f"плетене: {product['knitting']} бр.")
+                        if product['confection'] > 0:
+                            product_info.append(f"конфекция: {product['confection']} бр.")
+
+                        product_details = ", ".join(product_info)
+                        messages.append(f"{i}. {product['type']}: общо {product_total} бр. ({product_details})")
+
+                    if len(results['product_types']) > 5:
+                        messages.append(f"...и още {len(results['product_types']) - 5} вида продукти")
+
+        elif intent_type == 'summary':
+            # Daily summary
+            date_display = results.get('date_display', 'днес')
+            month_name = results.get('month_name', '')
+
+            messages.append(f"Производствена справка за {date_display} (месец {month_name}):")
+
+            knitting_total = results.get('knitting_total', 0)
+            confection_total = results.get('confection_total', 0)
+
+            messages.append(f"- Прогнозно дневно количество за плетене: {knitting_total} бр.")
+            messages.append(f"- Прогнозно дневно количество за конфекция: {confection_total} бр.")
+            messages.append(f"- Общо дневно производство: {knitting_total + confection_total} бр.")
+
+            # Add client information
+            if 'clients' in results and results['clients']:
+                messages.append("\nАктивни клиенти:")
+
+                # Display top 5 clients
+                for i, client in enumerate(results['clients'][:5], 1):
+                    client_total = client['total']
+                    client_info = []
+
+                    if client['knitting'] > 0:
+                        client_info.append(f"плетене: {client['knitting']} бр.")
+                    if client['confection'] > 0:
+                        client_info.append(f"конфекция: {client['confection']} бр.")
+
+                    client_details = ", ".join(client_info)
+                    messages.append(f"{i}. {client['name']}: общо {client_total} бр. ({client_details})")
+
+                if len(results['clients']) > 5:
+                    messages.append(f"...и още {len(results['clients']) - 5} клиенти")
+
+            # Add product type information
+            if 'product_types' in results and results['product_types']:
+                messages.append("\nПродукти в производство:")
+
+                # Display top 5 product types
+                for i, product in enumerate(results['product_types'][:5], 1):
+                    product_total = product['total']
+                    product_info = []
+
+                    if product['knitting'] > 0:
+                        product_info.append(f"плетене: {product['knitting']} бр.")
+                    if product['confection'] > 0:
+                        product_info.append(f"конфекция: {product['confection']} бр.")
+
+                    product_details = ", ".join(product_info)
+                    messages.append(f"{i}. {product['type']}: общо {product_total} бр. ({product_details})")
+
+                if len(results['product_types']) > 5:
+                    messages.append(f"...и още {len(results['product_types']) - 5} вида продукти")
+
+        # Add disclaimer about data approximation for daily summary
+        if intent_type == 'summary':
+            messages.append("\nЗабележка: Тъй като данните в таблицата са организирани по месеци, "
+                            "дневните данни са приблизителни стойности, базирани на месечните данни.")
+
+        # If no messages were generated, return a default message
+        if not messages:
+            return "Не успях да намеря подходяща информация по вашата заявка. Моля, опитайте с по-конкретен въпрос."
+
+        return "\n".join(messages)
+

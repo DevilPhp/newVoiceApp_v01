@@ -6,6 +6,7 @@ __pycache__/
 venv/
 env/
 migrations/
+Production planning 2025.xlsx
 
 # Ignore IDE settings
 .idea/

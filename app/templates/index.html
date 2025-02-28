@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Assistant</title>
+    <title>Асистент за Планиране на Производство</title>
 
     <!-- Include jQuery -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
@@ -15,8 +15,8 @@
 <body>
 <div class="container">
     <header>
-        <h1>Voice Assistant</h1>
-        <p>Speak to control your social media and more</p>
+        <h1>Асистент за ПП</h1>
+        <p>Говорете или пишете, за да получите информация за производствени данни</p>
     </header>
 
     <div class="main-content">
@@ -27,7 +27,7 @@
 
             <div class="status">
                 <div id="recordingStatus" class="recording-status">
-                    Click the microphone to start recording
+                    Натиснете микрофона, за да започнете запис
                 </div>
                 <div id="timer" class="timer">00:00</div>
             </div>
@@ -36,8 +36,8 @@
         <!-- Chat display area -->
         <div class="chat-container">
             <div class="chat-header">
-                <div id="currentChatInfo" class="current-chat-info">New conversation</div>
-                <button id="newChatBtn" class="new-chat-btn">New Chat</button>
+                <div id="currentChatInfo" class="current-chat-info">Нов разговор</div>
+                <button id="newChatBtn" class="new-chat-btn">Нов Чат</button>
             </div>
 
             <!-- Message history display -->
@@ -47,7 +47,7 @@
 
             <!-- Text input form at the bottom -->
             <form id="textInputForm" class="text-input-form">
-                <input type="text" id="userTextInput" placeholder="Type a message or press microphone to record..." class="user-text-input">
+                <input type="text" id="userTextInput" placeholder="Въведете съобщение или натиснете микрофона за запис..." class="user-text-input">
                 <button type="submit" class="send-button">
                     <i class="fas fa-paper-plane"></i>
                 </button>
@@ -57,14 +57,25 @@
 
     <!-- Chat History Sidebar -->
     <div class="chat-history-container" id="chatHistoryContainer">
-        <h3>Previous Conversations</h3>
+        <h3>Предишни Разговори</h3>
         <div id="chatHistoryList" class="chat-history-list">
-            <p>No previous conversations</p>
+            <p>Няма предишни разговори</p>
         </div>
     </div>
 
     <footer>
-        <p>&copy; 2025 Voice Assistant App</p>
+        <p>&copy; 2025 Асистент за Планиране на Производство</p>
+
+<!--        <div class="help-section">-->
+<!--            <h4>Как да използвате асистента:</h4>-->
+<!--            <ul>-->
+<!--                <li><strong>За клиентска информация:</strong> "Покажи информация за клиент [име на клиент]"</li>-->
+<!--                <li><strong>За продуктова информация:</strong> "Покажи данни за [тип продукт]"</li>-->
+<!--                <li><strong>За месечен план:</strong> "Какъв е планът за производство за месец [име на месец]"</li>-->
+<!--                <li><strong>За дневна справка:</strong> "Покажи ми обобщение на производството за днес"</li>-->
+<!--                <li><strong>За годишна справка:</strong> "Направи годишна справка за производството"</li>-->
+<!--            </ul>-->
+<!--        </div>-->
     </footer>
 </div>
 
