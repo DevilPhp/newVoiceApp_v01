@@ -16,8 +16,9 @@ production_processor = ProductionPlanningProcessor()
 PRODUCTION_TRIGGER_KEYWORDS = [
     'производство', 'клиент', 'модел', 'файн', 'фирма', 'поръчка', 'изплетено',
     'конфекционирано', 'справка', 'брой', 'цех', 'изделие', 'месец', 'прогноза',
-    'обобщение', 'планиране', 'статистика'
+    'обобщение', 'планиране', 'статистика', 'данни', 'информация', 'покажи'
 ]
+
 
 def transcribeAudioUsingOpenAI(audioFilePath):
     """
@@ -61,6 +62,7 @@ def transcribeAudioUsingOpenAI(audioFilePath):
             raise ValueError(f"Could not convert audio format: {str(e)}")
 
         with open(audioFilePath, 'rb') as audioFile:
+            # Specify Bulgarian language
             response = openai.audio.transcriptions.create(
                 model="whisper-1",
                 file=audioFile,
@@ -91,7 +93,12 @@ def should_process_production_planning(user_message):
         bool: True if the message should trigger production planning processing
     """
     message_lower = user_message.lower()
-    return any(keyword.lower() in message_lower for keyword in PRODUCTION_TRIGGER_KEYWORDS)
+
+    # Count how many trigger keywords are in the message
+    keyword_count = sum(1 for keyword in PRODUCTION_TRIGGER_KEYWORDS if keyword.lower() in message_lower)
+
+    # If at least 2 keywords are present, it's likely about production planning
+    return keyword_count >= 1  # Lowered threshold to make detection more sensitive
 
 
 def generateResponse(userMessage, chatId=None):
@@ -127,23 +134,24 @@ def generateResponse(userMessage, chatId=None):
                 current_app.logger.error(f"Error creating chat: {str(e)}")
                 db.session.rollback()
                 raise ValueError(f"Could not create chat: {str(e)}")
+
+        # Add user message to chat history
         try:
-            # Add user message to chat history
             userMsg = Message(chatId=chat.id, role="user", content=userMessage)
             db.session.add(userMsg)
             db.session.commit()
-
         except Exception as e:
             current_app.logger.error(f"Error adding user message to chat: {str(e)}")
             db.session.rollback()
             raise ValueError(f"Could not add user message to chat: {str(e)}")
 
-            # Check if the user is requesting production planning data analysis
-        production_response = None
+        # Check if the user is requesting production planning data analysis
         if should_process_production_planning(userMessage):
             current_app.logger.info(f"Detected production planning request: {userMessage}")
+
+            # Process the request with production planning processor
             try:
-                # Process the request with production planning processor
+                # This is the important call to process the query
                 production_response = production_processor.process_query(userMessage)
 
                 # If successful, use the response
@@ -156,11 +164,19 @@ def generateResponse(userMessage, chatId=None):
                     chat.updatedAt = db.func.now()
                     db.session.commit()
 
+                    current_app.logger.info(f"Production planning response generated: {response_text[:100]}...")
+
+                    # Return the production planning response
                     return response_text, chat.id
+                else:
+                    # Log the failure reason
+                    failure_reason = production_response.get('message') if production_response else "Unknown error"
+                    current_app.logger.warning(f"Production planning processing failed: {failure_reason}")
             except Exception as e:
                 current_app.logger.error(f"Error processing production planning query: {str(e)}")
                 # Continue with normal response generation if production planning processing fails
 
+        # Fall back to OpenAI GPT
         # Get chat history for context (limited to last 10 messages)
         chatMessages = Message.query.filter_by(chatId=chat.id).order_by(Message.createdAt.asc()).limit(10).all()
 
@@ -174,19 +190,11 @@ def generateResponse(userMessage, chatId=None):
         for msg in chatMessages:
             messages.append({"role": msg.role, "content": msg.content})
 
-        # If production planning processing was attempted but failed, add context about that
-        if production_response and not production_response.get('success'):
-            messages.append({
-                "role": "system",
-                "content": f"Note: User appears to be requesting production planning analysis, "
-                           f"but the system encountered an issue: {production_response.get('message')}"
-            })
-
         # Log the conversation context
         current_app.logger.info(
             f"Generating response for chat {chat.id} with {len(messages) - 1} previous messages")
 
-        # Generate a response using OpenAI's GPT-3 API'
+        # Generate a response using OpenAI's GPT API'
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
