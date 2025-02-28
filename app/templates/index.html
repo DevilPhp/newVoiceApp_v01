@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Assistant</title>
+
+    <!-- Include jQuery -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
+    <!-- CSS Styles -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<div class="container">
+    <header>
+        <h1>Voice Assistant</h1>
+        <p>Speak to control your social media and more</p>
+    </header>
+
+    <div class="voice-control-container">
+
+        <button id="recordButton" class="record-button">
+            <i class="fas fa-microphone"></i>
+        </button>
+
+        <div class="status">
+            <div id="recordingStatus" class="recording-status">
+                Click the microphone to start recording
+            </div>
+            <div id="timer" class="timer">00:00</div>
+        </div>
+
+        <div class="transcript-container">
+            <h3>Transcript:</h3>
+            <div id="transcript" class="transcript-text">
+                Your spoken words will appear here...
+            </div>
+        </div>
+
+        <div id="responseContainer" class="response-container">
+            <div class="chat-header">
+                <div id="currentChatInfo" class="current-chat-info">New conversation</div>
+                <button id="newChatBtn" class="new-chat-btn">New Chat</button>
+            </div>
+            <h3>Assistant Response:</h3>
+            <div id="assistantResponse" class="assistant-response">
+                Waiting for your voice command...
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat History Section - Optional -->
+    <div class="chat-history-container" style="display:none" id="chatHistoryContainer">
+        <h3>Previous Conversations</h3>
+        <div id="chatHistoryList" class="chat-history-list">
+            <p>No previous conversations</p>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2025 Voice Assistant App</p>
+    </footer>
+</div>
+
+<!-- JavaScript -->
+<script src="{{ url_for('static', filename='js/recorder.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

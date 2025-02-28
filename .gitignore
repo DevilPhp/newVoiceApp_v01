@@ -1,0 +1,28 @@
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+
+# Ignore virtual environment
+venv/
+env/
+migrations/
+
+# Ignore IDE settings
+.idea/
+
+# Ignore compiled files
+*.pyc
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore environment variables
+.env
+alembic.ini
+
+# Ignore log files
+*.log
+
+# Ignore compiled C extensions
+*.so

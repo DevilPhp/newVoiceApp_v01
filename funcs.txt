@@ -1,0 +1,7 @@
+ngrok http 5300 - run ngrok
+pip freeze > requirements.txt - create file
+pip install -r requirements.txt - install file
+flask --app run.py db migrate -m "TEXT" - for migrate
+flask --app run.py db init - for init
+alembic init migrations - init alembic
+./.venv/Scripts/activate - activating .venv
