@@ -45,30 +45,13 @@
                 <!-- Messages will be added here dynamically -->
             </div>
 
-            <!-- Current interaction area -->
-            <div class="current-interaction">
-                <div class="transcript-container">
-                    <h3>Your message:</h3>
-                    <div id="transcript" class="transcript-text">
-                        Your spoken words will appear here...
-                    </div>
-                </div>
-
-                <div id="responseContainer" class="response-container">
-                    <h3>Assistant Response:</h3>
-                    <div id="assistantResponse" class="assistant-response">
-                        Waiting for your voice command...
-                    </div>
-                </div>
-
-                <!-- Optional text input -->
-                <form id="textInputForm" class="text-input-form">
-                    <input type="text" id="userTextInput" placeholder="Type a message..." class="user-text-input">
-                    <button type="submit" class="send-button">
-                        <i class="fas fa-paper-plane"></i>
-                    </button>
-                </form>
-            </div>
+            <!-- Text input form at the bottom -->
+            <form id="textInputForm" class="text-input-form">
+                <input type="text" id="userTextInput" placeholder="Type a message or press microphone to record..." class="user-text-input">
+                <button type="submit" class="send-button">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </form>
         </div>
     </div>
 

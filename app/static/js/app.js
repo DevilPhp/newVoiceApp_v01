@@ -2,13 +2,11 @@ $(document).ready(function () {
     // DOM elements
     const $recordButton = $('#recordButton');
     const $recordingStatus = $('#recordingStatus');
-    const $transcript = $('#transcript');
-    const $assistantResponse = $('#assistantResponse');
+    const $chatMessagesContainer = $('#chatMessagesContainer');
     const $currentChatInfo = $('#currentChatInfo');
     const $newChatBtn = $('#newChatBtn');
     const $chatHistoryContainer = $('#chatHistoryContainer');
     const $chatHistoryList = $('#chatHistoryList');
-    const $chatMessagesContainer = $('#chatMessagesContainer');
 
     // Chat history and messaging
     let currentChatId = null;
@@ -148,8 +146,8 @@ $(document).ready(function () {
         });
     }
 
-    // Add a message to the chat display
-    function addMessageToDisplay(role, content, timestamp) {
+    // Create a message element with or without content
+    function createMessageElement(role, timestamp) {
         const formattedTime = timestamp ? formatDateTime(timestamp) : formatDateTime(new Date().toISOString());
         const $messageContainer = $('<div>', {
             class: `message ${role}`
@@ -165,12 +163,88 @@ $(document).ready(function () {
 
         const $messageContent = $('<div>', {
             class: 'message-content'
-        }).html(renderMarkdown(content)).appendTo($messageContainer);
+        }).appendTo($messageContainer);
+
+        return { $messageContainer, $messageContent };
+    }
+
+    // Add a message to the chat display
+    function addMessageToDisplay(role, content, timestamp) {
+        const { $messageContainer, $messageContent } = createMessageElement(role, timestamp);
+
+        // Add content if provided
+        if (content) {
+            $messageContent.html(renderMarkdown(content));
+        }
 
         $chatMessagesContainer.append($messageContainer);
 
         // Scroll to the bottom of the container
         $chatMessagesContainer.scrollTop($chatMessagesContainer[0].scrollHeight);
+
+        return { $messageContainer, $messageContent };
+    }
+
+    // Add a loading message to the chat display
+    function addLoadingMessage(role) {
+        const { $messageContainer, $messageContent } = createMessageElement(role);
+
+        $messageContainer.addClass('loading');
+        $messageContent.text('Thinking...');
+
+        $chatMessagesContainer.append($messageContainer);
+        $chatMessagesContainer.scrollTop($chatMessagesContainer[0].scrollHeight);
+
+        return { $messageContainer, $messageContent };
+    }
+
+    // Update message content with typewriter effect - simplified version
+    function typewriterEffect($messageContent, text) {
+        const typingSpeed = 35; // ms per character
+
+        // Clear the element initially
+        $messageContent.empty();
+
+        let formattedText = text;
+        let index = 0;
+        let htmlBuffer = '';
+        let inTag = false;
+        let tagBuffer = '';
+
+        // Set placeholder text while typing
+        $messageContent.html('<span class="typing-cursor">|</span>');
+
+        function processNextChunk() {
+            // Process 3 characters at a time for better performance
+            for (let i = 0; i < 3; i++) {
+                if (index >= formattedText.length) {
+                    // Render the final result with proper markdown
+                    $messageContent.html(renderMarkdown(text));
+
+                    // Scroll to the bottom
+                    $chatMessagesContainer.scrollTop($chatMessagesContainer[0].scrollHeight);
+                    return;
+                }
+
+                const char = formattedText[index];
+
+                htmlBuffer += char;
+                index++;
+            }
+
+            // Update content with what we have so far - simple incremental approach
+            $messageContent.text(htmlBuffer);
+            $messageContent.append('<span class="typing-cursor">|</span>');
+
+            // Scroll to the bottom change this is you want auto scroll enabled
+            // $chatMessagesContainer.scrollTop($chatMessagesContainer[0].scrollHeight);
+
+            // Process the next chunk
+            setTimeout(processNextChunk, typingSpeed);
+        }
+
+        // Start processing
+        processNextChunk();
     }
 
     // Send audio for transcription
@@ -188,7 +262,6 @@ $(document).ready(function () {
         // Check if the blob is too small (likely empty recording)
         if (audioBlob.size < 1000) {  // Less than 1KB
             $recordingStatus.text('Recording too short or empty. Please try again.');
-            $assistantResponse.text('Please record a longer message.');
             return;
         }
 
@@ -202,9 +275,11 @@ $(document).ready(function () {
         try {
             $recordingStatus.text('Sending audio for transcription...');
 
-            // Show loading animation
-            $assistantResponse.text('');
-            $assistantResponse.addClass('loading');
+            // Add user message with loading state first
+            const userMessage = addLoadingMessage('user');
+
+            // Add assistant message with loading state
+            const assistantMessage = addLoadingMessage('assistant');
 
             // Send the request
             const response = await $.ajax({
@@ -216,139 +291,43 @@ $(document).ready(function () {
                 timeout: 30000  // 30 seconds
             });
 
-            // Remove loading animation
-            $assistantResponse.removeClass('loading');
-
             // Check for errors
             if (response.error) {
                 $recordingStatus.text(`Error: ${response.error}`);
-                $assistantResponse.text(response.response || 'An error occurred. Please try again.');
+                userMessage.$messageContainer.remove();
+                assistantMessage.$messageContent.text(response.response || 'An error occurred. Please try again.');
+                assistantMessage.$messageContainer.removeClass('loading');
                 return;
             }
 
-            // Update the transcript
+            // Update the user message with transcription
             if (response.transcription) {
-                $transcript.text(response.transcription);
+                userMessage.$messageContent.html(renderMarkdown(response.transcription));
+                userMessage.$messageContainer.removeClass('loading');
                 $recordingStatus.text('Transcription complete');
-
-                // Add user message to chat display
-                addMessageToDisplay('user', response.transcription);
             } else {
-                $transcript.text('No transcription available');
+                userMessage.$messageContainer.remove();
                 $recordingStatus.text('Could not transcribe audio');
             }
 
-            // Display the assistant's response with typewriter effect
+            // Update the assistant message with response
             if (response.response) {
-                // Use the typewriter effect for a more dynamic response
-                typewriterEffect($assistantResponse, response.response, true);
-
-                // Also add to the chat messages
-                addMessageToDisplay('assistant', response.response);
+                assistantMessage.$messageContainer.removeClass('loading');
+                typewriterEffect(assistantMessage.$messageContent, response.response);
             } else {
-                $assistantResponse.text('No response from assistant');
+                assistantMessage.$messageContent.text('No response available');
+                assistantMessage.$messageContainer.removeClass('loading');
             }
 
             // Update chat ID
             if (response.chatId) {
                 currentChatId = response.chatId;
                 $currentChatInfo.text(`Conversation #${currentChatId}`);
-
-                // Load the chat history if this is a new chat ID
-                loadChatHistory(currentChatId);
             }
         } catch (error) {
             console.error('Error transcribing audio:', error);
             $recordingStatus.text(`Error: ${error.statusText || error.message || 'Failed to transcribe audio'}`);
-            $assistantResponse.removeClass('loading');
-            $assistantResponse.text('An error occurred. Please try again.');
         }
-    }
-
-    // Typewriter effect for responses
-    function typewriterEffect($element, text, parseMarkdown = false) {
-        const typingSpeed = 10; // ms per character
-        const fullHtml = parseMarkdown ? renderMarkdown(text) : text;
-
-        // First, clear the element
-        $element.empty();
-
-        // Create a temporary div to parse the HTML
-        const $tempDiv = $('<div>').html(fullHtml);
-        const nodes = $tempDiv[0].childNodes;
-
-        let currentNodeIndex = 0;
-        let currentTextIndex = 0;
-
-        function typeNextChar() {
-            // If we've processed all nodes, we're done
-            if (currentNodeIndex >= nodes.length) {
-                return;
-            }
-
-            const currentNode = nodes[currentNodeIndex];
-
-            // Handle text nodes
-            if (currentNode.nodeType === Node.TEXT_NODE) {
-                const nodeText = currentNode.textContent;
-
-                if (currentTextIndex < nodeText.length) {
-                    // Keep adding one character at a time
-                    const displayText = nodeText.substring(0, currentTextIndex + 1);
-
-                    // Replace or add the text node
-                    if ($element.contents().length > 0 && $element.contents().last()[0].nodeType === Node.TEXT_NODE) {
-                        $element.contents().last()[0].textContent = displayText;
-                    } else {
-                        $element.append(document.createTextNode(displayText));
-                    }
-
-                    currentTextIndex++;
-                    setTimeout(typeNextChar, typingSpeed);
-                } else {
-                    // Move to the next node
-                    currentNodeIndex++;
-                    currentTextIndex = 0;
-                    setTimeout(typeNextChar, typingSpeed);
-                }
-            }
-            // Handle element nodes
-            else if (currentNode.nodeType === Node.ELEMENT_NODE) {
-                // Clone the node without its children
-                const $newNode = $(currentNode.cloneNode(false));
-                $element.append($newNode);
-
-                // Process children recursively (if any)
-                if (currentNode.childNodes.length > 0) {
-                    // Save current state
-                    const parentNodeIndex = currentNodeIndex;
-                    const parentElement = $element;
-
-                    // Set new state
-                    $element = $newNode;
-                    const childNodes = Array.from(currentNode.childNodes);
-                    nodes.splice(currentNodeIndex + 1, 0, ...childNodes);
-
-                    // Move to first child
-                    currentNodeIndex++;
-                    currentTextIndex = 0;
-                    setTimeout(typeNextChar, typingSpeed);
-                } else {
-                    // No children, move to next node
-                    currentNodeIndex++;
-                    currentTextIndex = 0;
-                    setTimeout(typeNextChar, typingSpeed);
-                }
-            } else {
-                // Skip other node types
-                currentNodeIndex++;
-                currentTextIndex = 0;
-                setTimeout(typeNextChar, typingSpeed);
-            }
-        }
-
-        // Start the typewriter effect
-        typeNextChar();
     }
 
     // Load chat messages for a specific chat
@@ -371,26 +350,8 @@ $(document).ready(function () {
 
                 // Display messages
                 response.messages.forEach(message => {
-                    addMessageToDisplay(message.role, message.content, message.createdАt);
+                    addMessageToDisplay(message.role, message.content, message.createdAt);
                 });
-
-                // Show the last assistant response in the assistant response area
-                const lastAssistantMessage = response.messages
-                    .filter(msg => msg.role === 'assistant')
-                    .pop();
-
-                if (lastAssistantMessage) {
-                    $assistantResponse.html(renderMarkdown(lastAssistantMessage.content));
-                }
-
-                // Show the last user message in the transcript area
-                const lastUserMessage = response.messages
-                    .filter(msg => msg.role === 'user')
-                    .pop();
-
-                if (lastUserMessage) {
-                    $transcript.text(lastUserMessage.content);
-                }
             }
 
             // Display the chat history container
@@ -444,9 +405,50 @@ $(document).ready(function () {
     function startNewChat() {
         currentChatId = null;
         $currentChatInfo.text('New conversation');
-        $transcript.text('Your spoken words will appear here...');
-        $assistantResponse.text('Waiting for your voice command...');
         $chatMessagesContainer.empty();
+
+        // Add a welcome message
+        addMessageToDisplay('assistant', 'Hello! I\'m your voice assistant. You can speak to me by clicking the microphone button or type your message below.');
+    }
+
+    // Add a function to send text messages directly
+    function sendTextMessage(message) {
+        try {
+            // Add user message with content
+            addMessageToDisplay('user', message);
+
+            // Add assistant message with loading state
+            const assistantMessage = addLoadingMessage('assistant');
+
+            // Send the request
+            $.ajax({
+                url: '/chat',
+                type: 'POST',
+                data: JSON.stringify({
+                    message: message,
+                    chatId: currentChatId
+                }),
+                contentType: 'application/json',
+                success: function (response) {
+                    // Update assistant response with typewriter effect
+                    assistantMessage.$messageContainer.removeClass('loading');
+                    typewriterEffect(assistantMessage.$messageContent, response.response);
+
+                    // Update chat ID if provided
+                    if (response.chatId && !currentChatId) {
+                        currentChatId = response.chatId;
+                        $currentChatInfo.text(`Conversation #${currentChatId}`);
+                    }
+                },
+                error: function (xhr, status, error) {
+                    console.error('Error sending text message:', error);
+                    assistantMessage.$messageContent.text('An error occurred. Please try again.');
+                    assistantMessage.$messageContainer.removeClass('loading');
+                }
+            });
+        } catch (error) {
+            console.error('Error sending text message:', error);
+        }
     }
 
     // Event listeners
@@ -461,60 +463,7 @@ $(document).ready(function () {
         }
     });
 
-    // Add a function to send text messages directly
-    function sendTextMessage(message) {
-        try {
-            // Add to display immediately
-            addMessageToDisplay('user', message);
-
-            // Update transcript
-            $transcript.text(message);
-
-            // Show loading animation
-            $assistantResponse.text('');
-            $assistantResponse.addClass('loading');
-
-            // Send the request
-            $.ajax({
-                url: '/chat',
-                type: 'POST',
-                data: JSON.stringify({
-                    message: message,
-                    chatId: currentChatId
-                }),
-                contentType: 'application/json',
-                success: function (response) {
-                    $assistantResponse.removeClass('loading');
-
-                    // Update assistant response with typewriter effect
-                    typewriterEffect($assistantResponse, response.response, true);
-
-                    // Also add to the chat messages display
-                    addMessageToDisplay('assistant', response.response);
-
-                    // Update chat ID if provided
-                    if (response.chatId) {
-                        currentChatId = response.chatId;
-                        $currentChatInfo.text(`Conversation #${currentChatId}`);
-
-                        // Reload chat history
-                        loadChatHistory(currentChatId);
-                    }
-                },
-                error: function (xhr, status, error) {
-                    console.error('Error sending text message:', error);
-                    $assistantResponse.removeClass('loading');
-                    $assistantResponse.text('An error occurred. Please try again.');
-                }
-            });
-        } catch (error) {
-            console.error('Error sending text message:', error);
-            $assistantResponse.removeClass('loading');
-            $assistantResponse.text('An error occurred. Please try again.');
-        }
-    }
-
-    // Add text input functionality (optional)
+    // Add text input functionality
     const $textInputForm = $('#textInputForm');
     const $userTextInput = $('#userTextInput');
 
@@ -534,4 +483,7 @@ $(document).ready(function () {
 
     // Load available chats on startup
     loadChats();
+
+    // Start with a welcome message
+    startNewChat();
 });

@@ -30,14 +30,6 @@ def transcribeAudioUsingOpenAI(audioFilePath):
         fileExt = os.path.splitext(audioFilePath)[1].lower()
         current_app.logger.info(f"Original audio file: {audioFilePath}, Size: {fileSize} bytes, Format: {fileExt}")
 
-        # Convert the audio to a format supported by Whisper API
-        # Supported formats: flac, m4a, mp3, mp4, mpeg, mpga, oga, ogg, wav, webm
-        # convertedFilePath = None
-
-        # Check if the format is already supported
-        # supportedFormats = ['.flac', '.m4a', '.mp3', '.mp4', '.mpeg', '.mpga', '.oga', '.ogg', '.wav', '.webm']
-
-        # if fileExt not in supportedFormats:
         # Convert to MP3
         convertedFilePath = audioFilePath.replace(fileExt, '.mp3')
         current_app.logger.info(f"Converting audio from {fileExt} to .mp3")
@@ -71,7 +63,7 @@ def transcribeAudioUsingOpenAI(audioFilePath):
         current_app.logger.error(f"Error transcribing audio: {str(e)}")
 
         # Clean up the converted file if it was created
-        if 'converted_file_path' in locals() and convertedFilePath and os.path.exists(convertedFilePath):
+        if 'convertedFilePath' in locals() and convertedFilePath and os.path.exists(convertedFilePath):
             os.remove(convertedFilePath)
 
         return
@@ -137,12 +129,8 @@ def generateResponse(userMessage, chatId=None):
         # Generate a response using OpenAI's GPT-3 API'
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a great knitwear production assistant that responds"
-                                              "to voice commands and can analyse production stats when have access."},
-                {"role": "user", "content": userMessage}
-            ],
-            max_tokens=500,
+            messages=messages,
+            max_tokens=1000,
             temperature=0.7,
         )
 
