@@ -230,6 +230,7 @@ class ProductionPlanningProcessor:
         client_match = re.search(r'(?:клиент|фирма|марка)\s+(\w+)', message)
         if client_match:
             params['client'] = client_match.group(1)
+            print(client_match.group(1), 'HELLO')
         elif 'клиент' in message or 'фирма' in message or 'марка' in message:
             # If client intent but no specific client, check for client names in the message
             common_clients = ['matinique', 'lebek', 'матеник', 'лебек', 'robert tod', 'робърт тод', 'zerbi', 'зерби']
@@ -317,10 +318,15 @@ class ProductionPlanningProcessor:
             # Get data from both main sheets
             knitting_df = self.clean_dataframe(self.get_sheet_data('pletene'))
             confection_df = self.clean_dataframe(self.get_sheet_data('confekcia'))
+            clients_df = self.clean_dataframe(self.get_sheet_data('za pletene po fainove'))
 
             # Get all client names from first column, usually "Фирма" or similar
             clients_knitting = set()
             clients_confection = set()
+            allClients = set()
+
+            if not clients_df.empty:
+                allClients = set(clients_df.iloc[:, 0].dropna().unique())
 
             if not knitting_df.empty:
                 clients_knitting = set(knitting_df.iloc[:, 0].dropna().unique())
@@ -330,10 +336,11 @@ class ProductionPlanningProcessor:
 
             # Combine and filter out non-client entries (often headers or empty)
             all_clients = clients_knitting.union(clients_confection)
-            valid_clients = [client for client in all_clients
+            valid_clients = [client for client in allClients
                              if isinstance(client, str)
                              and client.strip()
                              and client.lower() not in ['фирма', 'company', 'производство']]
+            print(sorted(valid_clients))
 
             return sorted(valid_clients)
         except Exception as e:
