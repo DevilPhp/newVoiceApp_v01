@@ -4,6 +4,7 @@ from flask import current_app
 import re
 import datetime
 from datetime import date, timedelta
+import calendar
 import numpy as np
 
 
@@ -63,8 +64,9 @@ class ProductionPlanningProcessor:
             'client': ['клиент', 'фирма', 'компания', 'марка'],
             'product': ['продукт', 'артикул', 'модел', 'изделие', 'стока'],
             'production': ['производство', 'изработка', 'изплетено', 'изработено', 'конфекционирано'],
+            'machine_type': ['файн', 'машини', 'машина', 'гейдж', 'гейч'],
             'planning': ['планиране', 'план', 'график', 'прогноза', 'очаквано'],
-            'date': ['дата', 'ден', 'днес', 'утре', 'седмица', 'месец'],
+            'date': ['дата', 'ден', 'днес', 'утре', 'завчера', 'седмица', 'месец'],
             'quantity': ['количество', 'бройки', 'брой', 'бр'],
             'color': ['цвят', 'цветове'],
             'type': ['вид', 'тип', 'видове'],
@@ -100,6 +102,28 @@ class ProductionPlanningProcessor:
             'октомври': 10,
             'ноември': 11,
             'декември': 12
+        }
+
+        # Bulgarian ordinal number words to digits (1-31)
+        self.ordinal_word_to_num = {
+            'първи': 1, 'втори': 2, 'трети': 3, 'четвърти': 4, 'пети': 5,
+            'шести': 6, 'седми': 7, 'осми': 8, 'девети': 9, 'десети': 10,
+            'единадесети': 11, 'единайсти': 11, 'дванадесети': 12, 'дванайсти': 12, 'тринадесети': 13,
+            'тринайсти': 13, 'четиринадесети': 14, 'четиринайсти': 14,
+            'петнайсти': 15, 'петнадесети': 15, 'шестнадесети': 16,
+            'шестнайсти': 16, 'седемнадесети': 17, 'седемнайсти': 17,
+            'осемнайсти': 18, 'осемнадесети': 18, 'деветнадесети': 19,
+            'деветнайсти': 19, 'двадесети': 20, 'двайсти': 20, 'двадесет и първи': 21,
+            'двайсет и първи': 21, 'двайспърви': 21, 'двадесет и втори': 22, 'двайсет и втори': 22,
+            'двайсвтори': 22, 'двайстрети': 23, 'двайсет и трети': 23, 'двадесет и трети': 23,
+            'двайсет и четвърти': 24, 'двадесет и четвърти': 24, 'двайсчетвърти': 24,
+            'двадесет и пети': 25, 'двайсет и пети': 25, 'двайспети': 25,
+            'двадесет и шести': 26, 'двайсет и шести': 26, 'двайсшести': 26,
+            'двадесет и седми': 27, 'двайсет и седми': 27, 'двайсседми': 27,
+            'двадесет и осми': 28, 'двайсет и осми': 28, 'двайсосми': 28,
+            'двадесет и девети': 29, 'двайсет и девети': 29, 'двайсдевети': 29,
+            'тридесети': 30, 'трийсти': 30,
+            'тридесет и първи': 31, 'трийсет и първи': 31, 'трийспърви': 31,
         }
 
         # Cache for loaded data
@@ -208,7 +232,7 @@ class ProductionPlanningProcessor:
             params['client'] = client_match.group(1)
         elif 'клиент' in message or 'фирма' in message or 'марка' in message:
             # If client intent but no specific client, check for client names in the message
-            common_clients = ['matinique', 'lebek', 'мультиниче', 'лебек']
+            common_clients = ['matinique', 'lebek', 'матеник', 'лебек', 'robert tod', 'робърт тод', 'zerbi', 'зерби']
             for client in common_clients:
                 if client in message.lower():
                     params['client'] = client
@@ -220,6 +244,14 @@ class ProductionPlanningProcessor:
                 params['product_type'] = db_match
                 break
 
+        today = date.today()
+
+        # Check for "този месец" (this month)
+        is_this_month = bool(re.search(r'(?:този|текущия|настоящия|сегашния)\s+месец', message))
+        if is_this_month:
+            params['month'] = today.month
+            params['month_name'] = calendar.month_name[params['month']]
+
         # Extract month if present
         for month_name, month_num in self.month_mappings.items():
             if month_name in message:
@@ -227,14 +259,50 @@ class ProductionPlanningProcessor:
                 params['month_name'] = month_name
                 break
 
+
         # Extract date references
-        today = date.today()
         if 'днес' in message:
             params['date'] = today.strftime('%Y-%m-%d')
         elif 'утре' in message:
             params['date'] = (today + timedelta(days=1)).strftime('%Y-%m-%d')
         elif 'вчера' in message:
             params['date'] = (today - timedelta(days=1)).strftime('%Y-%m-%d')
+        elif 'завчера' in message:
+            params['date'] = (today - timedelta(days=2)).strftime('%Y-%m-%d')
+
+        # Extract day if present
+        day_num = None
+
+        # First check for written ordinal numbers
+        for word, num in self.ordinal_word_to_num.items():
+            if word in message:
+                day_num = num
+                break
+
+        # If no written ordinal found, look for numeric patterns
+        if day_num is None:
+            # Match patterns like "10-ти", "10ти", "10 ти", "10-и", "10и", etc.
+            day_match = re.search(r'(\d{1,2})(?:-?[ти][ия][и])?', message)
+            if day_match:
+                try:
+                    day_num = int(day_match.group(1))
+                    # Validate day number
+                    if day_num < 1 or day_num > 31:
+                        day_num = None
+                except ValueError:
+                    day_num = None
+
+        # If we have a day number, construct the date
+        if day_num:
+            try:
+                # Check if the day is valid for the given month and year
+                if not params['month']:
+                    params['month'] = today.month
+                max_days = calendar.monthrange(today.year, params['month'])[1]
+                if day_num <= max_days:
+                    params['date'] = f'{today.year}-{params['month']}-{day_num}'
+            except ValueError:
+                pass  # Invalid date, return None
 
         # Extract factory/workshop if mentioned
         factory_match = re.search(r'(?:цех|етаж)\s+(\w+|\d+(?:-ти)?)', message)
@@ -636,9 +704,11 @@ class ProductionPlanningProcessor:
 
             # Filter by product type
             product_knitting = knitting_df[knitting_df[
-                                               knitting_type_col] == product_type] if knitting_type_col and not knitting_df.empty else pd.DataFrame()
+                                               knitting_type_col] == product_type]\
+                                                if knitting_type_col and not knitting_df.empty else pd.DataFrame()
             product_confection = confection_df[confection_df[
-                                                   confection_type_col] == product_type] if confection_type_col and not confection_df.empty else pd.DataFrame()
+                                                   confection_type_col] == product_type]\
+                                                if confection_type_col and not confection_df.empty else pd.DataFrame()
 
             # Check if we found any data
             if product_knitting.empty and product_confection.empty:
@@ -981,10 +1051,10 @@ class ProductionPlanningProcessor:
                 if len(results['product_types']) > 5:
                     messages.append(f"...и още {len(results['product_types']) - 5} вида продукти")
 
-        # Add disclaimer about data approximation for daily summary
-        if intent_type == 'summary' or 'date' in params:
-            messages.append("\nЗабележка: Тъй като данните в таблицата са организирани по месеци, "
-                            "дневните данни са приблизителни стойности, базирани на месечните данни.")
+        # # Add disclaimer about data approximation for daily summary
+        # if intent_type == 'summary' or 'date' in params:
+        #     messages.append("\nЗабележка: Тъй като данните в таблицата са организирани по месеци, "
+        #                     "дневните данни са приблизителни стойности, базирани на месечните данни.")
 
         # If no messages were generated, return a default message
         if not messages:
@@ -1177,14 +1247,15 @@ class ProductionPlanningProcessor:
                     # Monthly planning
                     # This would call a method to get monthly planning data
                     # For now, we'll use a placeholder
-                    results = {
-                        'month_name': list(self.month_mappings.keys())[month - 1] if 1 <= month <= 12 else 'неизвестен',
-                        'knitting_total': 0,
-                        'confection_total': 0,
-                        'clients': [],
-                        'product_types': [],
-                        'factories': []
-                    }
+                    results = self.get_monthly_data(month)
+                    # results = {
+                    #     'month_name': list(self.month_mappings.keys())[month - 1] if 1 <= month <= 12 else 'неизвестен',
+                    #     'knitting_total': 0,
+                    #     'confection_total': 0,
+                    #     'clients': [],
+                    #     'product_types': [],
+                    #     'factories': []
+                    # }
                 else:
                     # Yearly planning
                     # This would call a method to get yearly planning data
