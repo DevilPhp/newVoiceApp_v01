@@ -482,12 +482,15 @@ class ProductionPlanningProcessor:
             # Load and clean the data from both sheets
             knitting_df = self.clean_dataframe(self.get_sheet_data('pletene'))
             confection_df = self.clean_dataframe(self.get_sheet_data('confekcia'))
+            summary_df = self.clean_dataframe(self.get_sheet_data('za pletene po fainove'))
 
             # Filter by client name
             client_knitting = knitting_df[
                 knitting_df.iloc[:, 0] == client_name] if not knitting_df.empty else pd.DataFrame()
             client_confection = confection_df[
                 confection_df.iloc[:, 0] == client_name] if not confection_df.empty else pd.DataFrame()
+            client_summary = summary_df[
+                summary_df.iloc[:, 0] == client_name] if not summary_df.empty else pd.DataFrame()
 
             # Check if we found any data
             if client_knitting.empty and client_confection.empty:
@@ -515,18 +518,19 @@ class ProductionPlanningProcessor:
             knitting_type_col = None
             confection_type_col = None
 
-            for df, col_var in [(knitting_df, 'knitting_type_col'), (confection_df, 'confection_type_col')]:
+            for df in [knitting_df, confection_df]:
                 if df.empty:
                     continue
 
                 for i, col in enumerate(df.columns):
                     if isinstance(col, str) and 'вид' in col.lower():
-                        locals()[col_var] = col
+                        knitting_type_col = col
+                        confection_type_col = col
                         break
 
-                # If not found by name, try column 5
-                if locals()[col_var] is None and len(df.columns) > 5:
-                    locals()[col_var] = df.columns[5]
+                # # If not found by name, try column 5
+                # if locals()[col_var] is None and len(df.columns) > 5:
+                #     locals()[col_var] = df.columns[5]
 
             # Get product types
             if knitting_type_col and not client_knitting.empty:
@@ -537,24 +541,28 @@ class ProductionPlanningProcessor:
                 types = client_confection[confection_type_col].dropna().unique()
                 results['product_types'].update([t for t in types if isinstance(t, str) and t.strip()])
 
+
             # Get order quantities
             # Try to find order quantity column (usually "Поръчка" or column 2)
             order_col = None
-            for i, col in enumerate(knitting_df.columns):
-                if isinstance(col, str) and 'поръчка' in col.lower():
+            for i, col in enumerate(summary_df.columns):
+                if isinstance(col, str) and 'поръчки в бр.' in col.lower():
                     order_col = col
                     break
 
-            if order_col is None and len(knitting_df.columns) > 2:
-                order_col = knitting_df.columns[2]
+            if order_col is None and len(summary_df.columns) > 1:
+                order_col = knitting_df.columns[1]
 
-            if order_col and not client_knitting.empty:
+            if order_col and not client_summary.empty:
                 client_orders = client_knitting[order_col].sum()
                 if not pd.isna(client_orders):
                     results['total_ordered'] = client_orders
 
             # Get knitting and confection quantities
             # Look for specific columns with production data
+
+            print(results)
+
             knitting_col = None
             confection_col = None
 
