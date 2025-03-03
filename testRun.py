@@ -28,6 +28,7 @@ try:
     processor = ProductionPlanningProcessor()
 
     # Define test queries in Bulgarian
+    #SOME PROBLEM
     test_queries = [
         # Daily summary
         "Покажи ми обобщение на производството за днес",
