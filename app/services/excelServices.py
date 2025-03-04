@@ -243,13 +243,13 @@ class ProductionPlanningProcessor:
             if product_type in message:
                 params['product_type'] = db_match
                 break
-
+        # print(user_message)
         # Extract products if client name and products is present
-        products_match = re.search(r'(?:всички|поръчки)\s+(\w+(?:\s+\w+)*)', message)
-        if products_match and client_match:
+        products_match = re.search(r'(?:всички|поръчки)\s+(\w+)', message)
+        if products_match:
             params['all_products'] = True
 
-        specific_products_match = re.search(r'(?:номер|модел)\s+(\w+(?:\s+\w+)*)', message)
+        specific_products_match = re.search(r'(?:номер|модел|модели|)\s+(\w+)', message)
         if specific_products_match and client_match:
             params['specific_products'] = specific_products_match.group(1)
             print(params['specific_products'])
@@ -290,17 +290,17 @@ class ProductionPlanningProcessor:
                 break
 
         # If no written ordinal found, look for numeric patterns
-        if day_num is None:
-            # Match patterns like "10-ти", "10ти", "10 ти", "10-и", "10и", etc.
-            day_match = re.search(r'(\d{1,2})(?:-?[ти][ия][и])?', message)
-            if day_match:
-                try:
-                    day_num = int(day_match.group(1))
-                    # Validate day number
-                    if day_num < 1 or day_num > 31:
-                        day_num = None
-                except ValueError:
-                    day_num = None
+        # if day_num is None:
+        #     # Match patterns like "10-ти", "10ти", "10 ти", "10-и", "10и", etc.
+        #     day_match = re.search(r'(\d{1,2})(?:-?[ти][ия][и])?', message)
+        #     if day_match:
+        #         try:
+        #             day_num = int(day_match.group(1))
+        #             # Validate day number
+        #             if day_num < 1 or day_num > 31:
+        #                 day_num = None
+        #         except ValueError:
+        #             day_num = None
 
         # If we have a day number, construct the date
         if day_num:
@@ -690,8 +690,8 @@ class ProductionPlanningProcessor:
                         }
 
                         # Get order quantity for this product
-                        if order_product_type_col and not product_knitting.empty:
-                            prod_orders = product_knitting[order_product_type_col].sum()
+                        if order_product_type_col and not product_confection.empty:
+                            prod_orders = product_confection[order_product_type_col].sum()
                             if not pd.isna(prod_orders):
                                 prod_details['ordered'] = prod_orders
 
@@ -954,9 +954,13 @@ class ProductionPlanningProcessor:
             return f"Възникна грешка при анализа: {results['error']}"
 
         messages = []
-        print(results)
+        # print(results)
         # Generate message based on intent type
-        if params['all_products']:
+        try:
+            is_all_products = results['all_products']
+        except KeyError:
+            is_all_products = False
+        if is_all_products:
             print('hello')
             messages.append(f"Информация за всички продукти за {results['client_name']}:")
             for product_name in results['all_products']:
@@ -1009,7 +1013,7 @@ class ProductionPlanningProcessor:
                 messages.append("\nИнформация по видове изделия:")
 
                 for product_type, details in results['product_details'].items():
-                    product_total = details.get('knitted', 0) + details.get('confectioned', 0)
+                    product_total = details.get('ordered', 0)
                     if product_total > 0:
                         messages.append(f"- {product_type}: общо {product_total} бр. "
                                         f"(изплетени: {details.get('knitted', 0)}, "
