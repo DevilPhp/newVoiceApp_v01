@@ -60,7 +60,7 @@ class ProductionPlanningProcessor:
 
         # Key Bulgarian keywords for intent detection
         self.bulgarian_keywords = {
-            'summary': ['обобщение', 'резюме', 'справка', 'информация', 'статистика', 'данни', 'покажи'],
+            'summary': ['обобщение', 'резюме', 'справка', 'информация', 'статистика', 'данни'],
             'client': ['клиент', 'фирма', 'компания', 'марка'],
             'product': ['продукт', 'артикул', 'модел', 'изделие', 'стока'],
             'production': ['производство', 'изработка', 'изплетено', 'изработено', 'конфекционирано'],
@@ -230,7 +230,6 @@ class ProductionPlanningProcessor:
         client_match = re.search(r'(?:клиент|фирма|марка)\s+(\w+)', message)
         if client_match:
             params['client'] = client_match.group(1)
-            print(client_match.group(1), 'HELLO')
         elif 'клиент' in message or 'фирма' in message or 'марка' in message:
             # If client intent but no specific client, check for client names in the message
             common_clients = ['matinique', 'lebek', 'матеник', 'лебек', 'robert tod', 'робърт тод', 'zerbi', 'зерби']
@@ -244,6 +243,16 @@ class ProductionPlanningProcessor:
             if product_type in message:
                 params['product_type'] = db_match
                 break
+
+        # Extract products if client name and products is present
+        products_match = re.search(r'(?:всички|поръчки)\s+(\w+(?:\s+\w+)*)', message)
+        if products_match and client_match:
+            params['all_products'] = True
+
+        specific_products_match = re.search(r'(?:номер|модел)\s+(\w+(?:\s+\w+)*)', message)
+        if specific_products_match and client_match:
+            params['specific_products'] = specific_products_match.group(1)
+            print(params['specific_products'])
 
         today = date.today()
 
@@ -316,31 +325,30 @@ class ProductionPlanningProcessor:
         """Get a list of all clients from the Excel file."""
         try:
             # Get data from both main sheets
-            knitting_df = self.clean_dataframe(self.get_sheet_data('pletene'))
-            confection_df = self.clean_dataframe(self.get_sheet_data('confekcia'))
+            # knitting_df = self.clean_dataframe(self.get_sheet_data('pletene'))
+            # confection_df = self.clean_dataframe(self.get_sheet_data('confekcia'))
             clients_df = self.clean_dataframe(self.get_sheet_data('za pletene po fainove'))
 
             # Get all client names from first column, usually "Фирма" or similar
-            clients_knitting = set()
-            clients_confection = set()
+            # clients_knitting = set()
+            # clients_confection = set()
             allClients = set()
 
             if not clients_df.empty:
                 allClients = set(clients_df.iloc[:, 0].dropna().unique())
 
-            if not knitting_df.empty:
-                clients_knitting = set(knitting_df.iloc[:, 0].dropna().unique())
-
-            if not confection_df.empty:
-                clients_confection = set(confection_df.iloc[:, 0].dropna().unique())
+            # if not knitting_df.empty:
+            #     clients_knitting = set(knitting_df.iloc[:, 0].dropna().unique())
+            #
+            # if not confection_df.empty:
+            #     clients_confection = set(confection_df.iloc[:, 0].dropna().unique())
 
             # Combine and filter out non-client entries (often headers or empty)
-            all_clients = clients_knitting.union(clients_confection)
+            # all_clients = clients_knitting.union(clients_confection)
             valid_clients = [client for client in allClients
                              if isinstance(client, str)
                              and client.strip()
                              and client.lower() not in ['фирма', 'company', 'производство']]
-            print(sorted(valid_clients))
 
             return sorted(valid_clients)
         except Exception as e:
@@ -466,7 +474,7 @@ class ProductionPlanningProcessor:
             current_app.logger.error(f"Error getting factory list: {str(e)}")
             return []
 
-    def get_client_info(self, client_query):
+    def get_client_info(self, client_query, all_products):
         """Get detailed information about a specific client."""
         results = {}
 
@@ -486,9 +494,11 @@ class ProductionPlanningProcessor:
 
             # Filter by client name
             client_knitting = knitting_df[
-                knitting_df.iloc[:, 0] == client_name] if not knitting_df.empty else pd.DataFrame()
+                (knitting_df.iloc[:, 0] == client_name) &
+                (knitting_df.iloc[:, 1])] if not knitting_df.empty else pd.DataFrame()
             client_confection = confection_df[
-                confection_df.iloc[:, 0] == client_name] if not confection_df.empty else pd.DataFrame()
+                (confection_df.iloc[:, 0] == client_name) &
+                (confection_df.iloc[:, 1])] if not confection_df.empty else pd.DataFrame()
             client_summary = summary_df[
                 summary_df.iloc[:, 0] == client_name] if not summary_df.empty else pd.DataFrame()
 
@@ -507,10 +517,14 @@ class ProductionPlanningProcessor:
                 'knitting_data': {},
                 'confection_data': {},
                 'product_types': set(),
+                'all_products': {},
+                'specific_product': {},
                 'monthly_data': {},
                 'total_ordered': 0,
                 'total_knitted': 0,
-                'total_confectioned': 0
+                'total_confectioned': 0,
+                'for_knitting': 0,
+                'for_confection': 0,
             }
 
             # Extract product types
@@ -532,6 +546,25 @@ class ProductionPlanningProcessor:
                 # if locals()[col_var] is None and len(df.columns) > 5:
                 #     locals()[col_var] = df.columns[5]
 
+            # Get all products if True
+            if all_products:
+                for col, row in client_confection.iterrows():
+                    # if isinstance(col, str) and 'модел' in col.lower():
+                    #     for row in client_confection[col]:
+                    #         results['all_products'][row] = 0
+                    results['all_products'][str(row['Модел'])] = {
+                        'файн': row['файн'],
+                        'вид': row['вид'],
+                        'поръчка': row['Поръчка'],
+                        'изплетено': row['изплетено до момента в бр.'],
+                        'за плетене': row['остава за плетене в бр'],
+                        'конфекционирано': row['конфекционирано до момента в бр.'],
+                        'за конфекциониране': row['остава за конфекция в бр']
+                    }
+
+            # Extract
+
+
             # Get product types
             if knitting_type_col and not client_knitting.empty:
                 types = client_knitting[knitting_type_col].dropna().unique()
@@ -540,7 +573,6 @@ class ProductionPlanningProcessor:
             if confection_type_col and not client_confection.empty:
                 types = client_confection[confection_type_col].dropna().unique()
                 results['product_types'].update([t for t in types if isinstance(t, str) and t.strip()])
-
 
             # Get order quantities
             # Try to find order quantity column (usually "Поръчка" or column 2)
@@ -554,48 +586,72 @@ class ProductionPlanningProcessor:
                 order_col = knitting_df.columns[1]
 
             if order_col and not client_summary.empty:
-                client_orders = client_knitting[order_col].sum()
+                client_orders = client_summary[order_col].sum()
                 if not pd.isna(client_orders):
                     results['total_ordered'] = client_orders
 
             # Get knitting and confection quantities
             # Look for specific columns with production data
 
-            print(results)
-
-            knitting_col = None
-            confection_col = None
+            knittingCol = None
+            confectionCol = None
+            forKnittingCol = None
+            forConfectionCol = None
+            order_product_type_col = None
 
             # Try to find columns with specific keywords
-            for df, col_name, keywords in [
-                (knitting_df, 'knitting_col', ['изплетено до момента', 'изплетено', 'изработено']),
-                (confection_df, 'confection_col', ['конфекционирано до момента', 'конфекционирано'])
-            ]:
-                if df.empty:
-                    continue
+            # for df, keywords in [
+            #     (knitting_df, ['изплетено до момента', 'конфекционирано до момента', 'остава за конфекция в бр', 'остава за плетене в бр']),
+            #     (confection_df, ['конфекционирано до момента', 'конфекционирано'])
+            # ]:
+            #     print(df)
+            #     if df.empty:
+            #         continue
+            #
+            for col in confection_df.columns:
+                if isinstance(col, str) and col == 'изплетено до момента в бр.':
+                    knittingCol = col
+                elif isinstance(col, str) and col == 'конфекционирано до момента в бр.':
+                    confectionCol = col
+                elif isinstance(col, str) and col == 'остава за конфекция в бр':
+                    forConfectionCol = col
+                elif isinstance(col, str) and col == 'остава за плетене в бр':
+                    forKnittingCol = col
+                elif isinstance(col, str) and col == 'Поръчка':
+                    order_product_type_col = col
 
-                for col in df.columns:
-                    if isinstance(col, str) and any(keyword in col.lower() for keyword in keywords):
-                        locals()[col_name] = col
-                        break
 
             # Get the knitting quantity
-            if knitting_col and not client_knitting.empty:
-                knitting_qty = client_knitting[knitting_col].sum()
+            # if knittingCol and not client_knitting.empty:
+            #     knitting_qty = client_knitting[knittingCol].sum()
+            #     if not pd.isna(knitting_qty):
+            #         results['total_knitted'] = knitting_qty
+
+            # Get the confection quantity
+            if not client_confection.empty:
+                knitting_qty = client_confection[knittingCol].sum()
                 if not pd.isna(knitting_qty):
                     results['total_knitted'] = knitting_qty
 
-            # Get the confection quantity
-            if confection_col and not client_confection.empty:
-                confection_qty = client_confection[confection_col].sum()
+                confection_qty = client_confection[confectionCol].sum()
                 if not pd.isna(confection_qty):
                     results['total_confectioned'] = confection_qty
+
+                for_knitting_qty = client_confection[forKnittingCol].sum()
+                if not pd.isna(knitting_qty):
+                    results['for_knitting'] = for_knitting_qty
+
+                for_confection_qty = client_confection[forConfectionCol].sum()
+                if not pd.isna(confection_qty):
+                    results['for_confection'] = for_confection_qty
+
+            # print(results)
 
             # Get monthly data
             month_cols = ['януари', 'февруари', 'март', 'април', 'май', 'юни',
                           'юли', 'август', 'септември', 'октомври', 'ноември', 'декември']
 
-            for df, data_type in [(client_knitting, 'knitting'), (client_confection, 'confection')]:
+            for df, data_type in [(client_knitting, 'плетене'), (client_confection, 'конфекция')]:
                 if df.empty:
                     continue
 
@@ -634,25 +690,25 @@ class ProductionPlanningProcessor:
                         }
 
                         # Get order quantity for this product
-                        if order_col and not product_knitting.empty:
-                            prod_orders = product_knitting[order_col].sum()
+                        if order_product_type_col and not product_knitting.empty:
+                            prod_orders = product_knitting[order_product_type_col].sum()
                             if not pd.isna(prod_orders):
                                 prod_details['ordered'] = prod_orders
 
                         # Get knitting quantity for this product
-                        if knitting_col and not product_knitting.empty:
-                            prod_knitting = product_knitting[knitting_col].sum()
+                        if knittingCol and not product_knitting.empty:
+                            prod_knitting = product_knitting[knittingCol].sum()
                             if not pd.isna(prod_knitting):
                                 prod_details['knitted'] = prod_knitting
 
                         # Get confection quantity for this product
-                        if confection_col and not product_confection.empty:
-                            prod_confection = product_confection[confection_col].sum()
+                        if confectionCol and not product_confection.empty:
+                            prod_confection = product_confection[confectionCol].sum()
                             if not pd.isna(prod_confection):
                                 prod_details['confectioned'] = prod_confection
 
                         # Get monthly data for this product
-                        for df, data_type in [(product_knitting, 'knitting'), (product_confection, 'confection')]:
+                        for df, data_type in [(product_knitting, 'плетене'), (product_confection, 'конфекция')]:
                             if df.empty:
                                 continue
 
@@ -676,7 +732,8 @@ class ProductionPlanningProcessor:
             return results
 
         except Exception as e:
-            current_app.logger.error(f"Error getting client info: {str(e)}")
+            # current_app.logger.error(f"Error getting client info: {str(e)}")
+            print(e)
             return {
                 'client_found': False,
                 'error': str(e),
@@ -773,13 +830,13 @@ class ProductionPlanningProcessor:
 
             # Get knitting and confection quantities
             # Look for specific columns with production data
-            knitting_col = None
-            confection_col = None
+            knittingCol = None
+            confectionCol = None
 
             # Try to find columns with specific keywords
             for df, col_name, keywords in [
-                (knitting_df, 'knitting_col', ['изплетено до момента', 'изплетено', 'изработено']),
-                (confection_df, 'confection_col', ['конфекционирано до момента', 'конфекционирано'])
+                (knitting_df, 'knittingCol', ['изплетено до момента', 'изплетено', 'изработено']),
+                (confection_df, 'confectionCol', ['конфекционирано до момента', 'конфекционирано'])
             ]:
                 if df.empty:
                     continue
@@ -790,14 +847,14 @@ class ProductionPlanningProcessor:
                         break
 
             # Get the knitting quantity
-            if knitting_col and not product_knitting.empty:
-                knitting_qty = product_knitting[knitting_col].sum()
+            if knittingCol and not product_knitting.empty:
+                knitting_qty = product_knitting[knittingCol].sum()
                 if not pd.isna(knitting_qty):
                     results['total_knitted'] = knitting_qty
 
             # Get the confection quantity
-            if confection_col and not product_confection.empty:
-                confection_qty = product_confection[confection_col].sum()
+            if confectionCol and not product_confection.empty:
+                confection_qty = product_confection[confectionCol].sum()
                 if not pd.isna(confection_qty):
                     results['total_confectioned'] = confection_qty
 
@@ -848,14 +905,14 @@ class ProductionPlanningProcessor:
                             client_details['ordered'] = client_orders
 
                     # Get knitting quantity for this client
-                    if knitting_col and not client_knitting.empty:
-                        client_knitting_qty = client_knitting[knitting_col].sum()
+                    if knittingCol and not client_knitting.empty:
+                        client_knitting_qty = client_knitting[knittingCol].sum()
                         if not pd.isna(client_knitting_qty):
                             client_details['knitted'] = client_knitting_qty
 
                     # Get confection quantity for this client
-                    if confection_col and not client_confection.empty:
-                        client_confection_qty = client_confection[confection_col].sum()
+                    if confectionCol and not client_confection.empty:
+                        client_confection_qty = client_confection[confectionCol].sum()
                         if not pd.isna(client_confection_qty):
                             client_details['confectioned'] = client_confection_qty
 
@@ -897,9 +954,19 @@ class ProductionPlanningProcessor:
             return f"Възникна грешка при анализа: {results['error']}"
 
         messages = []
-
+        print(results)
         # Generate message based on intent type
-        if intent_type == 'client':
+        if params['all_products']:
+            print('hello')
+            messages.append(f"Информация за всички продукти за {results['client_name']}:")
+            for product_name in results['all_products']:
+                message_string = f'- {product_name} - '
+                product_details = results['all_products'][product_name]
+                for detail_type, quantity in product_details.items():
+                    message_string += f"{detail_type}: {quantity}; "
+                messages.append(f'\n{message_string}')
+
+        elif intent_type == 'client':
             # Client information
             if not results.get('client_found', False):
                 return results.get('message', 'Не успях да намеря информация за този клиент.')
@@ -1237,7 +1304,7 @@ class ProductionPlanningProcessor:
                 # Get client information
                 client_query = params.get('client')
                 if client_query:
-                    results = self.get_client_info(client_query)
+                    results = self.get_client_info(client_query, params.get('all_products'))
                 else:
                     results = {
                         'client_found': False,
