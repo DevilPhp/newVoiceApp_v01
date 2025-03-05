@@ -70,8 +70,9 @@ def transcribeAudioUsingOpenAI(audioFilePath):
             )
 
         text = response.text
+        converted_text = convert_bg_names_to_english(text)
         current_app.logger.info(f"Transcription successful: {text[:100]}...")
-        return text
+        return converted_text
     except Exception as e:
         current_app.logger.error(f"Error transcribing audio: {str(e)}")
 
@@ -80,6 +81,42 @@ def transcribeAudioUsingOpenAI(audioFilePath):
             os.remove(convertedFilePath)
 
         return
+
+
+def convert_bg_names_to_english(message):
+    """
+    Convert Bulgarian names to English using a custom translation service.
+
+    Args:
+        message (str): The Bulgarian name to translate
+
+    Returns:
+        str: The English translation of the Bulgarian name
+    """
+    # For demonstration purposes, let's just return the name as it is
+
+    # Format messages for OpenAI
+    tool_instructions = {"role": "system",
+                 "content": "You are a helpful names replacing tool which translates Bulgarian names to English."
+                            "try to replace every CLIENT and MODEL/MODELS names if they exist in the message."
+                            "watch for triggering keywords for example {клиент, фирма, име, модел, модели, продукт, "
+                            "продукти, ...}.Do not convert the trigger word, just the name."
+                            "Return the converted message."}
+
+    user_message = {"role": "user", "content": message}
+    formatted_messages = [tool_instructions, user_message]
+
+    # Use the GPT-3 model to generate the response
+    response = openai.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=formatted_messages,
+        temperature=0.5,
+        max_tokens=100,
+    )
+    converted_text = response.choices[0].message.content
+    print(converted_text)
+
+    return converted_text
 
 
 def should_process_production_planning(user_message):
@@ -112,6 +149,7 @@ def generateResponse(userMessage, chatId=None):
     Returns:
         tuple: (response_text, chat_id) - The generated response and the chat ID
     """
+
 
     try:
         # Check if API key is configured

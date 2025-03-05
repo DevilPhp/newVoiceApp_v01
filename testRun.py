@@ -36,12 +36,12 @@ try:
         # "как си?",
 
         # Client information
-        "клиент Robert Todd",
+        # "клиент Robert Todd",
 
         # Client information
         "Покажи ми всички модели за клиент lebek",
 
-        "Покажи ми за клиент lebek следните модели PP-CO-035, PP-CO-037",
+        "Покажи ми за клиент lebek модел PP-CO-035 и модел PP-CO-037",
 
         # Product information
         # "Покажи данни за жилетки",

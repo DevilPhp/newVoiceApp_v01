@@ -245,14 +245,15 @@ class ProductionPlanningProcessor:
                 break
         # print(user_message)
         # Extract products if client name and products is present
-        products_match = re.search(r'(?:всички|поръчки)\s+(\w+)', message)
+        products_match = re.search(r'(всички)\s+(\w+)', message)
         if products_match:
             params['all_products'] = True
 
-        specific_products_match = re.search(r'(?:номер|модел|модели|)\s+(\w+)', message)
-        if specific_products_match and client_match:
-            params['specific_products'] = specific_products_match.group(1)
-            print(params['specific_products'])
+        specific_products_match = re.search(r'(?:номер|модел|модели|поръчка|поръчки)\s+(.*)', message)
+        if specific_products_match and client_match and not products_match:
+            params['specific_products'] = specific_products_match.group(1).split()
+            for char in [' ', ',', '-', ';', '.', ':', 'и']:
+                params['specific_products'] = [product.replace(char, '') for product in params['specific_products']]
 
         today = date.today()
 
@@ -474,7 +475,7 @@ class ProductionPlanningProcessor:
             current_app.logger.error(f"Error getting factory list: {str(e)}")
             return []
 
-    def get_client_info(self, client_query, all_products):
+    def get_client_info(self, client_query, all_products, specific_products):
         """Get detailed information about a specific client."""
         results = {}
 
@@ -562,7 +563,17 @@ class ProductionPlanningProcessor:
                         'за конфекциониране': row['остава за конфекция в бр']
                     }
 
-            # Extract
+            # Extract specific product details
+            if specific_products:
+                specific_product = self.match_product_name(specific_products, client_confection)
+
+                if specific_product:
+                    results['specific_product'] = specific_product
+
+            # Extract monthly data
+            # Look for specific columns with production data
+
+            # Try to find columns with specific keywords
 
 
             # Get product types
@@ -1308,7 +1319,9 @@ class ProductionPlanningProcessor:
                 # Get client information
                 client_query = params.get('client')
                 if client_query:
-                    results = self.get_client_info(client_query, params.get('all_products'))
+                    results = self.get_client_info(client_query,
+                                                   params.get('all_products'),
+                                                   params.get('specific_products'))
                 else:
                     results = {
                         'client_found': False,
