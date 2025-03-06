@@ -99,7 +99,7 @@ def convert_bg_names_to_english(message):
     tool_instructions = {"role": "system",
                  "content": "You are a helpful names replacing tool which translates Bulgarian names to English."
                             "try to replace every CLIENT and MODEL/MODELS names if they exist in the message."
-                            "watch for triggering keywords for example {клиент, фирма, име, модел, модели, продукт, "
+                            "Watch for triggering keywords for example {клиент, фирма, име, модел, модели, продукт, "
                             "продукти, ...}.Do not convert the trigger word, just the name."
                             "Return the converted message."}
 
@@ -114,7 +114,6 @@ def convert_bg_names_to_english(message):
         max_tokens=100,
     )
     converted_text = response.choices[0].message.content
-    print(converted_text)
 
     return converted_text
 

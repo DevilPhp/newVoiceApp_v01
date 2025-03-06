@@ -374,6 +374,7 @@ class ProductionPlanningProcessor:
         for client in client_list:
             if client_query in client.lower() or client.lower() in client_query:
                 matches.append((client, len(client) / len(client_query) if len(client_query) > 0 else 0))
+            print(matches)
 
         if matches:
             # Sort by score (closest length ratio)
@@ -415,6 +416,52 @@ class ProductionPlanningProcessor:
         except Exception as e:
             current_app.logger.error(f"Error getting product types: {str(e)}")
             return []
+
+    def match_product_name(self, product_query, db_client):
+        """Find the best matching product name from the available products."""
+        # print(product_query, db_client)
+        if not product_query or db_client.empty:
+            return None
+
+        score_treshreshold = 0.1
+
+        product_list = db_client.get('Модел')  # Assuming products collection has a 'name' field
+
+        selected_products = []
+
+        for query in product_query:
+            # Direct match
+            for product in product_list:
+                clean_product = str(product).lower()
+                for char in [' ', ',', '-', ';', '.', ':', 'и']:
+                    clean_product = clean_product.replace(char, '')
+                if clean_product == query:
+                    selected_products.append(product)
+
+            # print(selected_products)
+
+            # Partial match
+            matches = []
+            for product in product_list:
+                cleaned_product = str(product).lower()
+                for char in [' ', ',', '-', ';', '.', ':', 'и']:
+                    cleaned_product = cleaned_product.replace(char, '').lower()
+                if query in cleaned_product or cleaned_product in query:
+                    matches.append(
+                        (product, len(query) / len(cleaned_product) if len(query) > 0 else 0))
+
+            print(matches)
+            if matches:
+                filtered_matches = [match for match in matches if match[1] > score_treshreshold]
+
+                for match in filtered_matches:
+                    selected_products.append(match[0])
+                # Sort by score (closest length ratio)
+                # matches.sort(key=lambda x: abs(1 - x[1]))
+                # selected_products.append(matches[0][0])
+
+        return selected_products if selected_products else None
+
 
     def match_product_type(self, product_query):
         """Find the best matching product type from the available types."""
@@ -564,11 +611,13 @@ class ProductionPlanningProcessor:
                     }
 
             # Extract specific product details
+            match_specific_product = None
             if specific_products:
-                specific_product = self.match_product_name(specific_products, client_confection)
+                match_specific_product = self.match_product_name(specific_products, client_confection)
 
-                if specific_product:
-                    results['specific_product'] = specific_product
+                if match_specific_product:
+                    results['specific_product'] = match_specific_product
+            print(match_specific_product)
 
             # Extract monthly data
             # Look for specific columns with production data
@@ -972,7 +1021,6 @@ class ProductionPlanningProcessor:
         except KeyError:
             is_all_products = False
         if is_all_products:
-            print('hello')
             messages.append(f"Информация за всички продукти за {results['client_name']}:")
             for product_name in results['all_products']:
                 message_string = f'- {product_name} - '

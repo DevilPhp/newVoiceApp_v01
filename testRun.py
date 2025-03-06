@@ -39,9 +39,9 @@ try:
         # "клиент Robert Todd",
 
         # Client information
-        "Покажи ми всички модели за клиент lebek",
+        "Покажи ми всички модели за клиент robert tot",
 
-        "Покажи ми за клиент lebek модел PP-CO-035 и модел PP-CO-037",
+        "Покажи ми за клиент tod модел fw",
 
         # Product information
         # "Покажи данни за жилетки",
