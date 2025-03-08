@@ -435,7 +435,7 @@ class ProductionPlanningProcessor:
                 clean_product = str(product).lower()
                 for char in [' ', ',', '-', ';', '.', ':', 'и']:
                     clean_product = clean_product.replace(char, '')
-                if clean_product == query:
+                if clean_product == query and product not in selected_products:
                     selected_products.append(product)
 
             # print(selected_products)
@@ -455,13 +455,13 @@ class ProductionPlanningProcessor:
                 filtered_matches = [match for match in matches if match[1] > score_treshreshold]
 
                 for match in filtered_matches:
-                    selected_products.append(match[0])
+                    if match[0] not in selected_products:
+                        selected_products.append(match[0])
                 # Sort by score (closest length ratio)
                 # matches.sort(key=lambda x: abs(1 - x[1]))
                 # selected_products.append(matches[0][0])
 
         return selected_products if selected_products else None
-
 
     def match_product_type(self, product_query):
         """Find the best matching product type from the available types."""

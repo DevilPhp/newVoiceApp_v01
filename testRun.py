@@ -41,7 +41,7 @@ try:
         # Client information
         "Покажи ми всички модели за клиент robert tot",
 
-        "Покажи ми за клиент tod модел fw",
+        "Покажи ми за клиент lebek модел pp-co-035, PP-CO-035/45000052",
 
         # Product information
         # "Покажи данни за жилетки",
