@@ -374,7 +374,7 @@ class ProductionPlanningProcessor:
         for client in client_list:
             if client_query in client.lower() or client.lower() in client_query:
                 matches.append((client, len(client) / len(client_query) if len(client_query) > 0 else 0))
-            print(matches)
+            # print(matches)
 
         if matches:
             # Sort by score (closest length ratio)
@@ -425,7 +425,7 @@ class ProductionPlanningProcessor:
 
         score_treshreshold = 0.1
 
-        product_list = db_client.get('Модел')  # Assuming products collection has a 'name' field
+        product_list = db_client.get('Модел')  # Assuming products collection has a 'Модел' field
 
         selected_products = []
 
@@ -449,14 +449,14 @@ class ProductionPlanningProcessor:
                 if query in cleaned_product or cleaned_product in query:
                     matches.append(
                         (product, len(query) / len(cleaned_product) if len(query) > 0 else 0))
-
-            print(matches)
+            # print(matches)
             if matches:
                 filtered_matches = [match for match in matches if match[1] > score_treshreshold]
 
                 for match in filtered_matches:
-                    if match[0] not in selected_products:
-                        selected_products.append(match[0])
+                    # if match[0] not in selected_products:
+
+                    selected_products.append(match[0])
                 # Sort by score (closest length ratio)
                 # matches.sort(key=lambda x: abs(1 - x[1]))
                 # selected_products.append(matches[0][0])
@@ -611,19 +611,37 @@ class ProductionPlanningProcessor:
                     }
 
             # Extract specific product details
-            match_specific_product = None
+            # match_specific_product = None
             if specific_products:
                 match_specific_product = self.match_product_name(specific_products, client_confection)
 
-                if match_specific_product:
-                    results['specific_product'] = match_specific_product
-            print(match_specific_product)
+                if match_specific_product and not client_confection.empty:
+                    count_products = 1
+                    for col, row in client_confection.iterrows():
+                        if row['Модел'] in match_specific_product:
+                            results['specific_product'][f'{count_products}: {row['Модел']}'] = {
+                                'файн': row['файн'],
+                                'вид': row['вид'],
+                                'поръчка': row['Поръчка'],
+                                'изплетено': row['изплетено до момента в бр.'],
+                                'за плетене': row['остава за плетене в бр'],
+                                'конфекционирано': row['конфекционирано до момента в бр.'],
+                                'за конфекциониране': row['остава за конфекция в бр']
+                            }
+                        count_products += 1
+                    # for specific_product in match_specific_product:
+                    #     print(client_confection['Модел'] == specific_product)
+                        # for row in client_confection[client_confection['Модел'] == specific_product].iterrows():
+                        #     print(row)
+            #         results['specific_product'] = match_specific_product
+            # print(results['specific_product'])
 
             # Extract monthly data
             # Look for specific columns with production data
 
             # Try to find columns with specific keywords
 
+            print(results)
 
             # Get product types
             if knitting_type_col and not client_knitting.empty:
@@ -706,6 +724,15 @@ class ProductionPlanningProcessor:
                     results['for_confection'] = for_confection_qty
 
             # print(results)
+
+            # try:
+            #     for specific_product in results['specific_product']:
+            #         if not client_confection.empty:
+            #             for row in client_confection[client_confection['Модел'] == specific_product].iterrows():
+            #                 print(row)
+            # except KeyError:
+            #     print('Specific product not found in confection data')
+            #     pass
 
             # Get monthly data
             month_cols = ['януари', 'февруари', 'март', 'април', 'май', 'юни',
@@ -1014,13 +1041,18 @@ class ProductionPlanningProcessor:
             return f"Възникна грешка при анализа: {results['error']}"
 
         messages = []
+        # print(results['all_products'])
         # print(results)
         # Generate message based on intent type
-        try:
-            is_all_products = results['all_products']
-        except KeyError:
-            is_all_products = False
-        if is_all_products:
+        # try:
+        #     is_all_products = results['all_products']
+        # except KeyError:
+        #     is_all_products = False
+
+        # try:
+        #     is_specific_products = results['specific_products']
+        # except
+        if results['all_products']!= {}:
             messages.append(f"Информация за всички продукти за {results['client_name']}:")
             for product_name in results['all_products']:
                 message_string = f'- {product_name} - '
@@ -1028,6 +1060,11 @@ class ProductionPlanningProcessor:
                 for detail_type, quantity in product_details.items():
                     message_string += f"{detail_type}: {quantity}; "
                 messages.append(f'\n{message_string}')
+
+        # elif results['specific_products']!= {}:
+        #     messages.append(f"Информация за специфични продукти за {results['client_name']}:")
+        #     for product in results['specific_products']:
+
 
         elif intent_type == 'client':
             # Client information
