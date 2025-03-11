@@ -5,12 +5,12 @@ from pydub import AudioSegment
 from app.models.chat import Chat
 from app.models.message import Message
 from app.extensions import db
-from app.services.openAiExcelProcessor import OpenAIExcelProcessor
+from app.services.excelServices import ProductionPlanningProcessor
 
 openai.api_key = os.environ.get('OPENAI_API_KEY')
 
 # Initialize the Production Planning processor
-production_processor = OpenAIExcelProcessor()
+production_processor = ProductionPlanningProcessor()
 
 # Keywords that trigger production planning analysis (in Bulgarian)
 PRODUCTION_TRIGGER_KEYWORDS = [

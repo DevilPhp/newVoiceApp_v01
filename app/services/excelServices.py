@@ -596,11 +596,12 @@ class ProductionPlanningProcessor:
 
             # Get all products if True
             if all_products:
+                count_products = 1
                 for col, row in client_confection.iterrows():
                     # if isinstance(col, str) and 'модел' in col.lower():
                     #     for row in client_confection[col]:
                     #         results['all_products'][row] = 0
-                    results['all_products'][str(row['Модел'])] = {
+                    results['all_products'][f'{count_products}: {row['Модел']}'] = {
                         'файн': row['файн'],
                         'вид': row['вид'],
                         'поръчка': row['Поръчка'],
@@ -609,6 +610,7 @@ class ProductionPlanningProcessor:
                         'конфекционирано': row['конфекционирано до момента в бр.'],
                         'за конфекциониране': row['остава за конфекция в бр']
                     }
+                    count_products += 1
 
             # Extract specific product details
             # match_specific_product = None
@@ -1052,7 +1054,7 @@ class ProductionPlanningProcessor:
         # try:
         #     is_specific_products = results['specific_products']
         # except
-        if results['all_products']!= {}:
+        if results['all_products'] != {}:
             messages.append(f"Информация за всички продукти за {results['client_name']}:")
             for product_name in results['all_products']:
                 message_string = f'- {product_name} - '

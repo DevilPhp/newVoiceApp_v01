@@ -5,6 +5,7 @@ from flask import current_app
 import json
 import openai
 from typing import Dict, List, Any, Union
+import datetime
 
 
 class OpenAIExcelProcessor:
@@ -90,7 +91,8 @@ class OpenAIExcelProcessor:
             if isinstance(df.iloc[0, 0], str) and any(
                     term in df.iloc[0, 0].lower() for term in ['фирма', 'company', 'производство']):
                 original_columns = df.columns.tolist()
-                header_row = df.iloc[0].tolist()
+                header_row = df.iloc[1].tolist()
+
                 df = df.iloc[1:].reset_index(drop=True)
 
                 # Set meaningful column names where available
@@ -101,6 +103,7 @@ class OpenAIExcelProcessor:
             # Replace empty strings with NaN
             df.replace('', np.nan, inplace=True)
 
+            print(df.info())
             return df
         except Exception as e:
             print(f"Error cleaning dataframe: {str(e)}")
@@ -109,10 +112,22 @@ class OpenAIExcelProcessor:
     def _json_serializable(self, obj):
         """Convert DataFrame to JSON-serializable format, handling NaT and other non-serializable types."""
         if isinstance(obj, dict):
-            return {k: self._json_serializable(v) for k, v in obj.items()}
+            # Convert keys and values that might not be serializable
+            result = {}
+            for k, v in obj.items():
+                # Convert datetime keys to strings
+                if isinstance(k, (pd.Timestamp, datetime.datetime, datetime.date)):
+                    k = str(k)
+                # Convert other unserializable keys to strings too
+                elif not isinstance(k, (str, int, float, bool)) and k is not None:
+                    k = str(k)
+
+                # Convert the value recursively
+                result[k] = self._json_serializable(v)
+            return result
         elif isinstance(obj, list):
             return [self._json_serializable(item) for item in obj]
-        elif isinstance(obj, (pd.Timestamp, pd._libs.tslibs.nattype.NaTType)):
+        elif isinstance(obj, (pd.Timestamp, pd._libs.tslibs.nattype.NaTType, datetime.datetime, datetime.date)):
             return str(obj)
         elif pd.isna(obj):
             return None
